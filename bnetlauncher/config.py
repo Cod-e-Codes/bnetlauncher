@@ -40,6 +40,7 @@ DEFAULTS: dict[str, Any] = {
     # Game library
     "games_dir": str(_DATA_DIR / "games"),
     "custom_game_paths": [],            # list of extra scan directories
+    "show_unsupported_games": False,   # show catalogue titles marked not viable on Linux/Wine
 
     # UI
     "window_width": 1280,

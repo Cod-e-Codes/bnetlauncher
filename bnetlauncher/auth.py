@@ -112,12 +112,12 @@ def print_browser_open_hints() -> None:
     if not _is_wsl() or _wsl_windows_interop_available():
         return
     print(
-        "bnetlauncher: WSL cannot run Windows programs (rundll32, PowerShell, etc.) — "
+        "bnetlauncher: WSL cannot run Windows programs (rundll32, PowerShell, etc.). "
         'usually "Exec format error" when interop is disabled.\n'
         "  Enable it: add under /etc/wsl.conf:\n"
         "    [interop]\n"
         "    enabled=true\n"
-        "  Then in Windows (PowerShell or cmd): wsl --shutdown  — and reopen Ubuntu.\n"
+        "  Then in Windows (PowerShell or cmd): wsl --shutdown, then reopen Ubuntu.\n"
         "  Or install a browser in WSL: sudo apt install firefox\n",
         file=sys.stderr,
         flush=True,
@@ -129,7 +129,7 @@ def _open_url_via_windows_host(url: str) -> bool:
     Hand a URL to Windows from WSL. Tries several launchers; avoids relying on
     Linux webbrowser/xdg when the goal is the Windows default browser.
 
-    Uses start_new_session=False — WSL interop has been observed to fail for
+    Uses start_new_session=False. WSL interop has been observed to fail for
     some Windows executables when start_new_session=True.
     """
     roots = _windows_fs_roots()
@@ -418,7 +418,7 @@ class BNetAuth:
             if not open_default_browser(auth_url):
                 print("Open this URL in a browser to sign in:\n" + auth_url, file=sys.stderr)
                 print_browser_open_hints()
-                # Keep the callback server running — user may paste the URL manually.
+                # Keep the callback server running so the user can paste the URL manually.
 
             deadline = time.time() + 120
             while not done.is_set() and time.time() < deadline:

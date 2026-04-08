@@ -3,6 +3,8 @@ Settings UI: Adw.PreferencesDialog on libadwaita ≥1.2, else PreferencesWindow 
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -82,9 +84,15 @@ def _switch_preferences_row(
 
 
 class SettingsDialog(_PrefBase):
-    def __init__(self, parent: Gtk.Widget) -> None:
+    def __init__(
+        self,
+        parent: Gtk.Widget,
+        *,
+        on_library_prefs_changed: Optional[Callable[[], None]] = None,
+    ) -> None:
         super().__init__()
         self.cfg = get_config()
+        self._on_library_prefs_changed = on_library_prefs_changed
         self.set_title("Preferences")
         self._build()
         if _HAS_PREF_DIALOG:
@@ -97,8 +105,38 @@ class SettingsDialog(_PrefBase):
 
     def _build(self) -> None:
         self._build_auth_page()
+        self._build_library_page()
         self._build_wine_page()
         self._build_display_page()
+
+    def _build_library_page(self) -> None:
+        page = Adw.PreferencesPage(
+            title="Library",
+            icon_name="view-list-symbolic",
+        )
+        group = Adw.PreferencesGroup(
+            title="Catalogue",
+            description=(
+                "Titles marked as not viable on Linux/Wine (for example some "
+                "anti-cheat FPS games) are hidden unless you enable the option below."
+            ),
+        )
+
+        def _notify_library(visible: bool) -> None:
+            self.cfg.set("show_unsupported_games", visible)
+            if self._on_library_prefs_changed:
+                self._on_library_prefs_changed()
+
+        group.add(
+            _switch_preferences_row(
+                "Show unsupported titles",
+                "List games the catalogue marks as a poor fit for Linux/Wine",
+                self.cfg.get("show_unsupported_games", False),
+                _notify_library,
+            )
+        )
+        page.add(group)
+        self.add(page)
 
     # ------------------------------------------------------------------
     # Auth page
@@ -111,7 +149,7 @@ class SettingsDialog(_PrefBase):
         )
 
         group = Adw.PreferencesGroup(
-            title="Blizzard API Credentials",
+            title="Blizzard developer API",
             description=(
                 "Register at https://develop.battle.net to obtain "
                 "a client ID and secret."
@@ -234,7 +272,7 @@ class SettingsDialog(_PrefBase):
         group.add(
             _switch_preferences_row(
                 "Fake Fullscreen",
-                "Intercept ChangeDisplaySettings — prevents XWayland crashes",
+                "Intercept ChangeDisplaySettings (helps avoid XWayland crashes)",
                 self.cfg.get("fake_fullscreen", True),
                 lambda v: self.cfg.set("fake_fullscreen", v),
             )

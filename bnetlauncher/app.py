@@ -91,13 +91,13 @@ class BNetApplication(Adw.Application):
 
     def _on_about(self, *_) -> None:
         dialog = Adw.AboutDialog(
-            application_name="Battle.net Launcher",
+            application_name="bnetlauncher",
             application_icon="applications-games",
             developer_name="bnetlauncher",
             version="1.0.0",
             comments=(
-                "Battle.net launcher for Linux with native Wayland support "
-                "and Wine/Proton game management."
+                "Third-party launcher for Blizzard titles on Linux. Per-game "
+                "Wine prefixes, Wayland-friendly launches. Not affiliated with Blizzard."
             ),
             license_type=Gtk.License.MIT_X11,
         )

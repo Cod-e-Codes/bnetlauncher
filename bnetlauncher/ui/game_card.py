@@ -1,5 +1,5 @@
 """
-GameCard — GTK4 widget representing a single game in the library grid.
+GameCard: GTK4 widget for one game tile in the library grid.
 """
 import gi
 gi.require_version("Gtk", "4.0")
@@ -91,11 +91,19 @@ class GameCard(Gtk.Box):
         info.append(genre_label)
         self.append(info)
 
-        # ── Play / Install button ──────────────────────────────────────
-        btn_label = "PLAY" if self.game.installed else "INSTALL"
+        # Play / Install button
+        if not self.game.linux_supported:
+            btn_label = "UNSUPPORTED"
+        else:
+            btn_label = "PLAY" if self.game.installed else "INSTALL"
         self._play_btn = Gtk.Button(label=btn_label)
         self._play_btn.add_css_class("bnet-play-btn")
-        if self.game.installed:
+        if not self.game.linux_supported:
+            self._play_btn.set_sensitive(False)
+            if self.game.unsupported_reason:
+                self._play_btn.set_tooltip_text(self.game.unsupported_reason)
+            self._play_btn.add_css_class("bnet-play-btn-notinstalled")
+        elif self.game.installed:
             self._play_btn.add_css_class("bnet-play-btn-installed")
         else:
             self._play_btn.add_css_class("bnet-play-btn-notinstalled")
@@ -136,6 +144,8 @@ class GameCard(Gtk.Box):
         self.remove_css_class("bnet-card-hover")
 
     def set_playing(self, playing: bool) -> None:
+        if not self.game.linux_supported:
+            return
         if playing:
             self._play_btn.set_label("PLAYING")
             self._play_btn.set_sensitive(False)

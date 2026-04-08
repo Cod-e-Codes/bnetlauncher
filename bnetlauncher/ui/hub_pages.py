@@ -82,18 +82,19 @@ def build_home_page(
     outer.append(_section_title("Welcome"))
     outer.append(
         _body(
-            "Manage your Blizzard library, launch games through Wine with Wayland-safe "
-            "settings, and jump to Battle.net for installs and shop links."
+            "Independent GTK launcher for Blizzard titles on Linux: per-game Wine "
+            "prefixes, Wayland-safe launches, and browser links for installs and "
+            "news. Not affiliated with Blizzard."
         )
     )
 
     stats_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
     stats_row.set_margin_top(8)
 
-    li = Gtk.Label(label="—")
-    lt = Gtk.Label(label="—")
-    lw = Gtk.Label(label="—")
-    la = Gtk.Label(label="—")
+    li = Gtk.Label(label="-")
+    lt = Gtk.Label(label="-")
+    lw = Gtk.Label(label="-")
+    la = Gtk.Label(label="-")
 
     stats_row.append(_stat_box("Installed", li))
     stats_row.append(_stat_box("In library", lt))
@@ -135,17 +136,17 @@ def build_friends_page(
     outer.append(_section_title("Friends"))
     outer.append(
         _body(
-            "Friend lists and presence come from Battle.net. This launcher does not yet "
-            "call Blizzard social APIs; use the buttons below to sign in or open "
-            "Battle.net in your browser."
+            "Friend lists and presence use Blizzard's network. This app does not yet "
+            "call Blizzard social APIs; sign in below or open the official site in "
+            "your browser."
         )
     )
 
-    sign_btn = _pill_button("Sign in with Battle.net")
+    sign_btn = _pill_button("Sign in (Blizzard OAuth)")
     sign_btn.connect("clicked", lambda *_: on_sign_in())
     outer.append(sign_btn)
 
-    social = _pill_button("Open Battle.net (social & chat)", "bnet-hub-button-secondary")
+    social = _pill_button("Open Blizzard site (social & chat)", "bnet-hub-button-secondary")
     social.connect(
         "clicked",
         lambda *_: on_open_url("https://battle.net/"),
@@ -168,7 +169,7 @@ def build_shop_page(on_open_url: Callable[[str], None]) -> Gtk.Widget:
     )
 
     links = [
-        ("Battle.net Shop", "https://shop.battle.net/en-us"),
+        ("Blizzard shop (web)", "https://shop.battle.net/en-us"),
         ("WoW subscriptions & services", "https://shop.battle.net/en-us/family/world-of-warcraft"),
         ("Diablo IV", "https://shop.battle.net/en-us/family/diablo"),
         ("Overwatch coins & bundles", "https://shop.battle.net/en-us/family/overwatch"),

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bnetlauncher"
 version = "1.0.0"
-description = "Battle.net launcher for Linux with native Wayland support"
+description = "Third-party Blizzard game launcher for Linux (Wine bottles, Wayland)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"

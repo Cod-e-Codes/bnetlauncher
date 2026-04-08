@@ -17,8 +17,8 @@ SIDEBAR_ITEMS = [
     SidebarItem("Home",       "go-home-symbolic",              "home"),
     SidebarItem("Games",      "applications-games-symbolic",   "games"),
     SidebarItem("Friends",    "system-users-symbolic",         "friends"),
-    SidebarItem("Shop",       "emblem-shopping-symbolic",      "shop"),
-    SidebarItem("News",       "news-symbolic",                 "news"),
+    SidebarItem("Shop",       "web-browser-symbolic",          "shop"),
+    SidebarItem("News",       "help-contents-symbolic",        "news"),
 ]
 
 SIDEBAR_BOTTOM = [
@@ -53,7 +53,7 @@ class Sidebar(Gtk.Box):
         logo_icon.set_pixel_size(32)
         logo_icon.add_css_class("bnet-logo-icon")
 
-        logo_label = Gtk.Label(label="Battle.net")
+        logo_label = Gtk.Label(label="bnetlauncher")
         logo_label.add_css_class("bnet-logo-label")
 
         logo_box.append(logo_icon)

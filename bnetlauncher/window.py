@@ -1,5 +1,5 @@
 """
-MainWindow — the primary application window.
+MainWindow: primary application window.
 
 Layout (left → right):
   Sidebar | Main stack (home / games / friends / shop / news / settings)
@@ -21,6 +21,7 @@ from gi.repository import Adw, GLib, Gtk
 from bnetlauncher.auth import BNetAuth, open_default_browser, print_browser_open_hints
 from bnetlauncher.config import get_config
 from bnetlauncher.game_manager import Game, GameManager
+from bnetlauncher import install_health
 from bnetlauncher.ui.game_card import GameCard
 from bnetlauncher.ui import hub_pages
 from bnetlauncher.ui.sidebar import Sidebar
@@ -223,7 +224,9 @@ class MainWindow(Adw.ApplicationWindow):
         title.set_halign(Gtk.Align.START)
         title.add_css_class("bnet-section-title")
 
-        subtitle = Gtk.Label(label="All Blizzard titles — installed games shown first")
+        subtitle = Gtk.Label(
+            label="Wine bottles per game under your prefix dir. Installed titles first."
+        )
         subtitle.set_halign(Gtk.Align.START)
         subtitle.add_css_class("bnet-section-subtitle")
 
@@ -250,7 +253,7 @@ class MainWindow(Adw.ApplicationWindow):
         container.append(self._detail_panel)
 
         # Populate cards
-        self._populate_game_cards(self.game_manager.get_all())
+        self._populate_game_cards(self.game_manager.get_library_games())
 
         return container
 
@@ -259,6 +262,21 @@ class MainWindow(Adw.ApplicationWindow):
         while child := self._flowbox.get_first_child():
             self._flowbox.remove(child)
         self._cards.clear()
+
+        if not games:
+            self._selected_game = None
+            self._detail_title.set_text("No games in library")
+            self._detail_genre.set_text("")
+            self._detail_desc.set_text(
+                "Enable Settings → Library → Show unsupported titles, or install "
+                "a game via the Blizzard desktop app in Wine, then click Refresh."
+            )
+            self._detail_status.set_text("")
+            self._detail_play_btn.set_label("PLAY")
+            self._detail_play_btn.set_sensitive(False)
+            self._detail_verify_btn.set_sensitive(False)
+            self._detail_repair_btn.set_sensitive(True)
+            return
 
         for game in games:
             card = GameCard(game)
@@ -310,6 +328,21 @@ class MainWindow(Adw.ApplicationWindow):
         self._detail_desc.add_css_class("bnet-detail-desc")
         inner.append(self._detail_desc)
 
+        tools = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._detail_verify_btn = Gtk.Button(label="Verify install")
+        self._detail_verify_btn.set_tooltip_text(
+            "Check executable and Wine prefix paths for the selected game"
+        )
+        self._detail_verify_btn.connect("clicked", self._on_verify_install_clicked)
+        self._detail_repair_btn = Gtk.Button(label="Repair tips")
+        self._detail_repair_btn.set_tooltip_text(
+            "Blizzard app Scan and Repair and other troubleshooting"
+        )
+        self._detail_repair_btn.connect("clicked", self._on_repair_tips_clicked)
+        tools.append(self._detail_verify_btn)
+        tools.append(self._detail_repair_btn)
+        inner.append(tools)
+
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
         inner.append(spacer)
@@ -331,6 +364,16 @@ class MainWindow(Adw.ApplicationWindow):
         self._selected_game = game
         self._detail_title.set_text(game.name)
         self._detail_genre.set_text(game.genre.upper())
+        self._detail_verify_btn.set_sensitive(True)
+        self._detail_repair_btn.set_sensitive(True)
+
+        if not game.linux_supported:
+            reason = (game.unsupported_reason or "Marked unsupported on Linux/Wine.").strip()
+            self._detail_desc.set_text(game.description + "\n\n" + reason)
+            self._detail_status.set_text("Unsupported on Linux/Wine")
+            self._detail_play_btn.set_label("UNSUPPORTED")
+            self._detail_play_btn.set_sensitive(False)
+            return
 
         if game.installed:
             self._detail_desc.set_text(game.description)
@@ -384,7 +427,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _update_home_stats(self) -> None:
         if not self._hub_home_labels:
             return
-        games = self.game_manager.get_all()
+        games = self.game_manager.get_library_games()
         n_inst = sum(1 for g in games if g.installed)
         self._hub_home_labels["installed"].set_text(str(n_inst))
         self._hub_home_labels["total"].set_text(str(len(games)))
@@ -404,7 +447,7 @@ class MainWindow(Adw.ApplicationWindow):
             btn.set_label("Signed in (friend list API not wired yet)")
             btn.set_sensitive(False)
         else:
-            btn.set_label("Sign in with Battle.net")
+            btn.set_label("Sign in (Blizzard OAuth)")
             btn.set_sensitive(True)
 
     def _sync_hub_page(self, view_id: str) -> None:
@@ -450,7 +493,26 @@ class MainWindow(Adw.ApplicationWindow):
         if self._selected_game:
             self._launch_game(self._selected_game)
 
+    def _on_verify_install_clicked(self, _) -> None:
+        g = self._selected_game
+        if not g:
+            return
+        ok, issues = install_health.verify_install(g, self.wine_runner)
+        if ok:
+            self._toast(f"{g.name}: install paths look OK.")
+        else:
+            self._toast(f"{g.name}: " + " ".join(issues), is_error=True)
+
+    def _on_repair_tips_clicked(self, _) -> None:
+        self._toast(install_health.repair_instructions_text())
+
     def _launch_game(self, game: Game) -> None:
+        if not game.linux_supported:
+            self._toast(
+                game.unsupported_reason or "This title is not supported on Linux/Wine.",
+                is_error=True,
+            )
+            return
         if not game.installed:
             self._start_install(game)
             return
@@ -481,7 +543,13 @@ class MainWindow(Adw.ApplicationWindow):
             self._set_status("Launch failed")
 
     def _start_install(self, game: Game) -> None:
-        """Open Blizzard download page and start Battle.net.exe in Wine when available."""
+        """Open Blizzard download page and start the desktop agent .exe in Wine when found."""
+        if not game.linux_supported:
+            self._toast(
+                game.unsupported_reason or "This title is not supported on Linux/Wine.",
+                is_error=True,
+            )
+            return
         url = self.game_manager.install_download_url(game.id)
         browser_ok = open_default_browser(url)
         if not browser_ok:
@@ -498,26 +566,26 @@ class MainWindow(Adw.ApplicationWindow):
             if self.wine_runner.is_running(_BNET_AGENT_GAME_ID):
                 if browser_ok:
                     self._toast(
-                        f"Battle.net is already running — install {game.name} there, "
+                        f"The Blizzard desktop app is already running. Install {game.name} there, "
                         "then click refresh."
                     )
                 else:
                     self._toast(
-                        "Battle.net is already running. Install the game there, then refresh."
+                        "Blizzard desktop app is already running. Install the game there, then refresh."
                     )
-                self._set_status("Use Battle.net to install, then refresh the library")
+                self._set_status("Use the Blizzard app to install, then refresh the library")
                 return
             prefix = self.wine_runner.wine_prefix_for_exe(bnet_exe)
             if not prefix:
                 if browser_ok:
                     self._toast(
                         f"Opened install page for {game.name}. "
-                        "Could not detect Wine prefix for Battle.net — install via browser."
+                        "Could not detect Wine prefix for the Blizzard app. Install via browser."
                     )
                 else:
                     self._toast(
-                        "Could not open browser or detect Battle.net prefix. "
-                        "Install Battle.net from download.battle.net, then refresh.",
+                        "Could not open browser or detect the Blizzard app prefix. "
+                        "Install from download.battle.net, then refresh.",
                         is_error=True,
                     )
                 return
@@ -532,37 +600,37 @@ class MainWindow(Adw.ApplicationWindow):
                 )
                 if browser_ok:
                     self._toast(
-                        f"Opened Battle.net and the Blizzard page for {game.name}. "
+                        f"Opened the Blizzard desktop app and the page for {game.name}. "
                         "Install in the app, then refresh."
                     )
                 else:
                     self._toast(
-                        f"Started Battle.net — install {game.name}, then refresh the library."
+                        f"Started the Blizzard desktop app. Install {game.name}, then refresh."
                     )
-                self._set_status("Battle.net running — after install, click refresh")
+                self._set_status("Blizzard app running. After install, click refresh")
             except WineError as e:
-                msg = f"Could not start Battle.net: {e}"
+                msg = f"Could not start the Blizzard desktop app: {e}"
                 if browser_ok:
                     msg += " The download page may still be open in your browser."
                 self._toast(msg, is_error=True)
         elif browser_ok:
             self._toast(
                 f"Opened Blizzard's page for {game.name}. "
-                "It usually downloads Battle.net-Setup.exe — run that with Wine, "
+                "It usually downloads Battle.net-Setup.exe. Run that with Wine, "
                 "then install the game inside Battle.net and click refresh."
             )
             self._set_status("Run Battle.net-Setup.exe in Wine, then refresh")
         else:
             self._toast(
-                "Could not open a browser. Install Battle.net from "
+                "Could not open a browser. Install the Blizzard desktop app from "
                 "https://download.battle.net then refresh the library.",
                 is_error=True,
             )
-            self._set_status("Install Battle.net manually, then refresh")
+            self._set_status("Install the Blizzard desktop app manually, then refresh")
 
     def _on_bnet_agent_exited(self, returncode: int) -> None:
         self._set_status(
-            "Ready" if returncode == 0 else f"Battle.net exited with code {returncode}"
+            "Ready" if returncode == 0 else f"Blizzard desktop app exited with code {returncode}"
         )
 
     def _on_game_exited(self, game_id: str, returncode: int) -> None:
@@ -576,7 +644,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_search_changed(self, entry: Gtk.SearchEntry) -> None:
         query = entry.get_text().lower().strip()
-        games = self.game_manager.get_all()
+        games = self.game_manager.get_library_games()
         if query:
             games = [g for g in games if query in g.name.lower() or query in g.genre.lower()]
         self._populate_game_cards(games)
@@ -592,7 +660,7 @@ class MainWindow(Adw.ApplicationWindow):
         if auth.is_authenticated():
             auth.clear_tokens()
             self._sync_account_button()
-            self._toast("Signed out — tokens cleared from this device.")
+            self._toast("Signed out. Tokens cleared on this device.")
             self._refresh_friends_signin_button()
             self._update_home_stats()
             return
@@ -635,18 +703,18 @@ class MainWindow(Adw.ApplicationWindow):
         if authed:
             self._account_btn.set_label("Sign Out")
             self._account_btn.set_tooltip_text(
-                "Signed in — click to clear Battle.net tokens on this device"
+                "Signed in. Click to clear Blizzard OAuth tokens on this device."
             )
             self._account_btn.remove_css_class("suggested-action")
         else:
             self._account_btn.set_label("Sign In")
-            self._account_btn.set_tooltip_text("Sign in with Battle.net (OAuth)")
+            self._account_btn.set_tooltip_text("Sign in with Blizzard (OAuth)")
             self._account_btn.add_css_class("suggested-action")
 
     def _reload_games(self) -> None:
-        self._populate_game_cards(self.game_manager.get_all())
+        self._populate_game_cards(self.game_manager.get_library_games())
         installed_count = sum(1 for g in self.game_manager.get_all() if g.installed)
-        self._set_status(f"Library refreshed — {installed_count} game(s) installed")
+        self._set_status(f"Library refreshed. {installed_count} game(s) installed.")
         self._update_home_stats()
 
     def _set_status(self, msg: str) -> None:
@@ -663,7 +731,10 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _open_settings_dialog(self) -> None:
         from bnetlauncher.ui.settings import SettingsDialog
-        SettingsDialog(parent=self)
+        SettingsDialog(
+            parent=self,
+            on_library_prefs_changed=lambda: GLib.idle_add(self._reload_games),
+        )
         # Switch back to games view
         self._stack.set_visible_child_name("games")
         self._sidebar.select("games")

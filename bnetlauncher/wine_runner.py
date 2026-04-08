@@ -7,19 +7,19 @@ virtual framebuffer.  If the game process doesn't gracefully handle the
 resync, it segfaults or freezes.
 
 Mitigations applied here:
-  1. WINE_FULLSCREEN_FAKE_FULLSCREEN=1 — intercepts ChangeDisplaySettings
+  1. WINE_FULLSCREEN_FAKE_FULLSCREEN=1: intercepts ChangeDisplaySettings
      calls and returns success without actually changing the mode.  The game
      thinks it's fullscreen; the resolution never actually changes.
-  2. Borderless windowed via registry injection — sets the game to a
+  2. Borderless windowed via registry injection: sets the game to a
      borderless window that fills the screen instead of exclusive FS.
-  3. WINEDEBUG=-all — suppresses Wine's noisy debug output that can cause
+  3. WINEDEBUG=-all: suppresses Wine's noisy debug output that can cause
      pipe buffer pressure and hangs.
-  4. DXVK_ASYNC=1 — prevents pipeline stalls that look like crashes.
-  5. esync/fsync — reduces kernel-side lock contention.
+  4. DXVK_ASYNC=1: prevents pipeline stalls that look like crashes.
+  5. esync/fsync: reduces kernel-side lock contention.
   6. SDL_VIDEODRIVER and DISPLAY are set explicitly so the child process
      connects to XWayland rather than trying to open a Wayland socket
      (most Windows games don't speak Wayland).
-  7. Virtual desktop mode (optional) — runs inside a Wine virtual desktop
+  7. Virtual desktop mode (optional): runs inside a Wine virtual desktop
      window.  Completely eliminates resize-induced crashes at the cost of
      desktop integration.
 """
@@ -114,7 +114,7 @@ class WineRunner:
         return None
 
     def find_battle_net_executable(self) -> Optional[str]:
-        """Locate Battle.net launcher under ~/.wine, prefix dir, and custom paths."""
+        """Locate Blizzard desktop agent executables under Wine prefixes and custom paths."""
         roots: list[Path] = []
         home_wine = Path.home() / ".wine"
         if (home_wine / "drive_c").is_dir():
@@ -217,7 +217,7 @@ class WineRunner:
         return [wine_bin, executable, *args]
 
     # ------------------------------------------------------------------
-    # Environment construction — the heart of resize safety
+    # Environment construction (core of resize safety)
     # ------------------------------------------------------------------
 
     def _build_env(self, prefix: Optional[str], game_id: str) -> dict[str, str]:
@@ -254,7 +254,7 @@ class WineRunner:
         # some Wayland compositors when pages are remapped mid-frame).
         env["WINE_SIMULATE_WRITECOMBINE"] = "0"
 
-        # Large address aware: lets 32-bit games use >2 GB — reduces OOM
+        # Large address aware: lets 32-bit games use >2 GB; reduces OOM
         # crashes that look like resize-related crashes.
         env["WINE_LARGE_ADDRESS_AWARE"] = "1"
 
@@ -367,7 +367,7 @@ class WineRunner:
             r'HKCU\Software\Wine\Explorer',
             r'HKCU\Software\Wine\Explorer\Desktops',
         ]
-        # Desktop emulation off — let the WM manage window decoration
+        # Desktop emulation off: let the WM manage window decoration
         regs = [
             (
                 r"HKCU\Software\Wine\Explorer",

@@ -100,7 +100,7 @@ from gi.repository import Gtk, Adw
 }
 
 if check_gtk4; then
-    info "GTK4 Python bindings already available — skipping system install."
+    info "GTK4 Python bindings already available; skipping system install."
 else
     install_deps
 fi
@@ -130,9 +130,9 @@ SVGEOF
 cat > "${DESKTOP_DIR}/bnetlauncher.desktop" << DESKTOPEOF
 [Desktop Entry]
 Type=Application
-Name=Battle.net Launcher
-GenericName=Game Launcher
-Comment=Battle.net launcher for Linux with Wayland support
+Name=bnetlauncher
+GenericName=Blizzard games (Wine)
+Comment=Third-party Blizzard game launcher for Linux with Wayland support
 Exec=${HOME}/.local/bin/bnetlauncher
 Icon=bnetlauncher
 Terminal=false
@@ -174,7 +174,7 @@ echo ""
 green "=== Installation complete ==="
 echo ""
 echo "  Launch with:  bnetlauncher"
-echo "  Or search for 'Battle.net' in your application launcher."
+echo "  Or search for 'bnetlauncher' in your application launcher."
 echo ""
 echo "  Configuration: ~/.config/bnetlauncher/config.json"
 echo "  Game data:     ~/.local/share/bnetlauncher/"

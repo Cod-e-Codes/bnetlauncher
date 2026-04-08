@@ -1,5 +1,5 @@
 """
-bnetlauncher — Battle.net launcher for Linux.
+bnetlauncher: third-party Blizzard game launcher for Linux.
 Entry point: configures Wayland environment before GTK loads.
 """
 import os

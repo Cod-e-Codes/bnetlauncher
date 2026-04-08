@@ -1,25 +1,23 @@
 """
 Game library manager.
 
-Detects Battle.net games installed on the system by scanning registry paths
-inside Wine prefixes and known installation directories.  Falls back to user-
-configured custom paths.
-
-Game metadata is sourced from a local JSON catalogue (bundled) plus
-optional live data from the Blizzard Game Data API when credentials exist.
+Detects Blizzard catalogue titles on disk (Wine prefixes, Battle.net paths,
+custom dirs). Metadata comes from the in-code catalogue plus optional Blizzard
+API when credentials exist. Use get_library_games() for the UI grid (respects
+unsupported-title hiding).
 """
 import json
 import os
 import sqlite3
 import threading
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
 from bnetlauncher.config import get_config
 
 
-# Known Battle.net game identifiers and their display metadata.
+# Known Blizzard catalogue game identifiers and display metadata.
 # Executable paths are relative to the default installation root.
 CATALOGUE: dict[str, dict] = {
     "wow": {
@@ -131,6 +129,12 @@ CATALOGUE: dict[str, dict] = {
         "description": "Premier first-person shooter franchise.",
         "genre": "FPS",
         "background_color": "#0a0a0a",
+        "linux_supported": False,
+        "unsupported_reason": (
+            "Activision titles rely on kernel-level anti-cheat that does not run "
+            "on Linux/Wine. Hidden by default; enable in Settings if you still "
+            "want the tile."
+        ),
     },
 }
 
@@ -148,6 +152,8 @@ class Game:
     icon: str
     size_bytes: int = 0
     last_played: int = 0       # unix timestamp
+    linux_supported: bool = True
+    unsupported_reason: str = ""
 
 
 class GameManager:
@@ -213,6 +219,8 @@ class GameManager:
                 description=meta["description"],
                 background_color=meta["background_color"],
                 icon=meta["icon"],
+                linux_supported=bool(meta.get("linux_supported", True)),
+                unsupported_reason=str(meta.get("unsupported_reason", "")),
             )
 
             # Merge with DB for last_played etc.
@@ -310,6 +318,14 @@ class GameManager:
                 key=lambda g: (-g.installed, -g.last_played, g.name),
             )
 
+    def get_library_games(self) -> list[Game]:
+        """Games shown in the grid: excludes Linux-unsupported titles unless opted in."""
+        show_all = bool(self.cfg.get("show_unsupported_games", False))
+        games = self.get_all()
+        if show_all:
+            return games
+        return [g for g in games if g.linux_supported]
+
     def install_download_url(self, game_id: str) -> str:
         """Blizzard download page for a catalogue game; page usually offers Battle.net-Setup.exe."""
         meta = CATALOGUE.get(game_id)
@@ -350,6 +366,8 @@ class GameManager:
             description="",
             background_color="#1a1a1a",
             icon="application-x-executable",
+            linux_supported=True,
+            unsupported_reason="",
         )
         with self._lock:
             self._games[game_id] = game
