@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bnetlauncher"
+version = "1.0.0"
+description = "Battle.net launcher for Linux with native Wayland support"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["battle.net", "blizzard", "launcher", "linux", "wayland", "wine"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: GTK",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment",
+]
+
+# PyGObject and libadwaita must be installed via system package manager.
+# They cannot be reliably installed via pip on most distros.
+# See install.sh for the correct apt/dnf/pacman commands.
+dependencies = []
+
+[project.scripts]
+bnetlauncher = "bnetlauncher.main:main"
+
+[project.urls]
+Repository = "https://github.com/Cod-e-Codes/bnetlauncher"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bnetlauncher*"]
+
+[tool.setuptools.package-data]
+bnetlauncher = ["ui/style.css", "data/*.json"]

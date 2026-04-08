@@ -1,0 +1,487 @@
+/* =========================================================
+   bnetlauncher — GTK4 theme
+   Palette:
+     bg-darkest  #05090f
+     bg-dark     #08111f
+     bg-panel    #0c1929
+     bg-card     #0e1f33
+     bg-hover    #152840
+     accent-blue #148eff
+     accent-glow #0066cc
+     text-primary #e8f0fe
+     text-muted   #6a8bb0
+     installed    #00c853
+   ========================================================= */
+
+/* ── Root / Window ──────────────────────────────────────── */
+
+window,
+.bnet-root {
+  background-color: #05090f;
+  color: #e8f0fe;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+
+.bnet-sidebar {
+  background-color: #05090f;
+  border-right: 1px solid #0f2040;
+  min-width: 220px;
+}
+
+.bnet-sidebar-sep {
+  background-color: #0f2040;
+  margin-left: 16px;
+  margin-right: 16px;
+  opacity: 0.6;
+}
+
+/* Logo */
+.bnet-logo-icon {
+  color: #148eff;
+}
+
+.bnet-logo-label {
+  font-family: 'Rajdhani', 'Cantarell', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #e8f0fe;
+}
+
+/* Nav buttons */
+.bnet-nav-btn {
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 8px;
+  margin: 2px 8px;
+  color: #6a8bb0;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.bnet-nav-btn:hover {
+  background-color: #0f2040;
+  color: #c0d8f0;
+}
+
+.bnet-nav-btn:active,
+.bnet-nav-btn:checked {
+  background-color: #0f2a50;
+  color: #148eff;
+}
+
+.bnet-nav-btn:checked .bnet-nav-icon {
+  color: #148eff;
+}
+
+.bnet-nav-icon {
+  color: inherit;
+}
+
+.bnet-nav-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+}
+
+.bnet-version-label {
+  font-size: 10px;
+  color: #2a4060;
+  margin-left: 20px;
+}
+
+/* ── Main content area ──────────────────────────────────── */
+
+.bnet-content {
+  background-color: #08111f;
+}
+
+/* ── Header bar ─────────────────────────────────────────── */
+
+headerbar,
+.bnet-headerbar {
+  background-color: #05090f;
+  border-bottom: 1px solid #0f2040;
+  color: #e8f0fe;
+  min-height: 48px;
+}
+
+headerbar .title {
+  font-weight: 700;
+  font-size: 15px;
+  color: #e8f0fe;
+}
+
+/* ── Game grid ───────────────────────────────────────────── */
+
+.bnet-game-grid {
+  background-color: #08111f;
+  padding: 24px;
+}
+
+/* ── Game card ───────────────────────────────────────────── */
+
+.bnet-game-card {
+  background-color: #0e1f33;
+  border-radius: 8px;
+  border: 1px solid #112035;
+  transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+  margin: 6px;
+}
+
+.bnet-game-card:hover,
+.bnet-card-hover {
+  border-color: #1a3a6a;
+  box-shadow: 0 6px 24px rgba(20, 142, 255, 0.18);
+}
+
+.bnet-game-banner {
+  background-color: #0a1828;
+  min-height: 180px;
+}
+
+.bnet-banner-placeholder {
+  min-height: 180px;
+  min-width: 220px;
+}
+
+.bnet-banner-icon-label {
+  font-family: 'Rajdhani', 'Cantarell', sans-serif;
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,0.12);
+  text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+}
+
+.bnet-installed-dot {
+  color: #00c853;
+  font-size: 14px;
+  text-shadow: 0 0 6px rgba(0, 200, 83, 0.8);
+}
+
+.bnet-card-info {
+  padding: 0;
+}
+
+.bnet-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #d0e4f8;
+  letter-spacing: 0.3px;
+}
+
+.bnet-card-genre {
+  font-size: 11px;
+  color: #4a6a90;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 500;
+}
+
+/* ── Play button ─────────────────────────────────────────── */
+
+.bnet-play-btn {
+  border-radius: 4px;
+  padding: 7px 0;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  border: none;
+  transition: background-color 120ms ease;
+}
+
+.bnet-play-btn-installed {
+  background-color: #148eff;
+  color: #ffffff;
+}
+
+.bnet-play-btn-installed:hover {
+  background-color: #1a9fff;
+}
+
+.bnet-play-btn-installed:active {
+  background-color: #0066cc;
+}
+
+.bnet-play-btn-notinstalled {
+  background-color: #0d2240;
+  color: #4a8acd;
+  border: 1px solid #1a3a6a;
+}
+
+.bnet-play-btn-notinstalled:hover {
+  background-color: #112840;
+  color: #6aacdd;
+}
+
+/* ── Section headers ─────────────────────────────────────── */
+
+.bnet-section-title {
+  font-family: 'Rajdhani', 'Cantarell', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: #e8f0fe;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.bnet-section-subtitle {
+  font-size: 13px;
+  color: #4a6a90;
+}
+
+/* ── Detail panel ────────────────────────────────────────── */
+
+.bnet-detail-panel {
+  background-color: #0c1929;
+  border-left: 1px solid #0f2040;
+  min-width: 320px;
+}
+
+.bnet-detail-title {
+  font-family: 'Rajdhani', 'Cantarell', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: #e8f0fe;
+  letter-spacing: 0.3px;
+}
+
+.bnet-detail-genre {
+  font-size: 12px;
+  color: #148eff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.bnet-detail-desc {
+  font-size: 14px;
+  color: #6a8bb0;
+  line-height: 1.6;
+}
+
+.bnet-detail-play-btn {
+  background-color: #148eff;
+  color: #ffffff;
+  border-radius: 4px;
+  border: none;
+  padding: 12px 0;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+}
+
+.bnet-detail-play-btn:hover {
+  background-color: #1a9fff;
+}
+
+/* ── Status bar ──────────────────────────────────────────── */
+
+.bnet-status-bar {
+  background-color: #05090f;
+  border-top: 1px solid #0f2040;
+  padding: 6px 16px;
+  min-height: 32px;
+}
+
+.bnet-status-label {
+  font-size: 12px;
+  color: #4a6a90;
+}
+
+.bnet-status-ok {
+  color: #00c853;
+}
+
+.bnet-status-error {
+  color: #f44336;
+}
+
+/* ── Auth / Login page ───────────────────────────────────── */
+
+.bnet-auth-box {
+  background-color: #08111f;
+}
+
+.bnet-auth-title {
+  font-family: 'Rajdhani', 'Cantarell', sans-serif;
+  font-size: 36px;
+  font-weight: 900;
+  color: #e8f0fe;
+  letter-spacing: 2px;
+}
+
+.bnet-auth-subtitle {
+  font-size: 15px;
+  color: #4a6a90;
+}
+
+.bnet-auth-btn {
+  background-color: #148eff;
+  color: #ffffff;
+  border-radius: 4px;
+  border: none;
+  padding: 14px 40px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  min-width: 280px;
+}
+
+.bnet-auth-btn:hover {
+  background-color: #1a9fff;
+}
+
+.bnet-auth-skip {
+  background: none;
+  border: none;
+  color: #4a6a90;
+  font-size: 13px;
+  padding: 8px;
+}
+
+.bnet-auth-skip:hover {
+  color: #6a8bb0;
+}
+
+/* ── Spinner ─────────────────────────────────────────────── */
+
+spinner {
+  color: #148eff;
+}
+
+/* ── Scrolled windows ────────────────────────────────────── */
+
+scrolledwindow {
+  background-color: transparent;
+}
+
+scrollbar {
+  background-color: transparent;
+}
+
+scrollbar slider {
+  background-color: #1a3060;
+  border-radius: 4px;
+  min-width: 6px;
+  min-height: 6px;
+}
+
+scrollbar slider:hover {
+  background-color: #2a4880;
+}
+
+/* ── Adwaita overrides ───────────────────────────────────── */
+
+.view,
+.background {
+  background-color: #08111f;
+  color: #e8f0fe;
+}
+
+.dim-label {
+  color: #4a6a90;
+}
+
+entry {
+  background-color: #0c1929;
+  color: #e8f0fe;
+  border: 1px solid #1a3060;
+  border-radius: 4px;
+}
+
+entry:focus {
+  border-color: #148eff;
+  box-shadow: 0 0 0 2px rgba(20, 142, 255, 0.25);
+}
+
+/* Notification toasts */
+toast {
+  background-color: #0e1f33;
+  color: #e8f0fe;
+  border: 1px solid #1a3060;
+}
+
+/* ── FlowBox ─────────────────────────────────────────────── */
+
+flowboxchild {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+flowboxchild:selected {
+  background: transparent;
+}
+
+/* ── Hub pages (Home / Friends / Shop / News) ────────────── */
+
+.bnet-hub-body {
+  color: #6a8bb0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.bnet-home-stat {
+  background-color: #0c1929;
+  border: 1px solid #1a3060;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.bnet-home-stat-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #6a8bb0;
+  text-transform: uppercase;
+}
+
+.bnet-home-stat-value {
+  font-family: 'Rajdhani', 'Cantarell', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #e8f0fe;
+}
+
+.bnet-hub-button {
+  background-color: #148eff;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 6px;
+}
+
+.bnet-hub-button:hover {
+  background-color: #3aa0ff;
+}
+
+.bnet-hub-button-secondary {
+  background-color: #0c1929;
+  color: #e8f0fe;
+  border: 1px solid #1a3060;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 6px;
+}
+
+.bnet-hub-button-secondary:hover {
+  border-color: #148eff;
+  color: #148eff;
+}
+
+.bnet-hub-link-row {
+  background-color: #0c1929;
+  color: #e8f0fe;
+  border: 1px solid #1a3060;
+  font-weight: 500;
+  padding: 12px 16px;
+  border-radius: 6px;
+}
+
+.bnet-hub-link-row:hover {
+  border-color: #148eff;
+  background-color: #0e1f33;
+}

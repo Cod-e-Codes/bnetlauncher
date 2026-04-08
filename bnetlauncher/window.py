@@ -1,0 +1,669 @@
+"""
+MainWindow — the primary application window.
+
+Layout (left → right):
+  Sidebar | Main stack (home / games / friends / shop / news / settings)
+
+The games view has a secondary panel split:
+  Game grid (scrollable FlowBox) | Game detail panel (right)
+
+Wayland resize note: we connect to the GdkSurface 'notify::width' and
+'notify::height' signals via the toplevel surface to handle compositor-driven
+size changes gracefully without freezing or crashing.
+"""
+import sys
+
+import gi
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, GLib, Gtk
+
+from bnetlauncher.auth import BNetAuth, open_default_browser, print_browser_open_hints
+from bnetlauncher.config import get_config
+from bnetlauncher.game_manager import Game, GameManager
+from bnetlauncher.ui.game_card import GameCard
+from bnetlauncher.ui import hub_pages
+from bnetlauncher.ui.sidebar import Sidebar
+from bnetlauncher.wine_runner import WineError, WineRunner
+
+_BNET_AGENT_GAME_ID = "_battlenet_agent"
+
+
+class MainWindow(Adw.ApplicationWindow):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+        self.cfg = get_config()
+        self.game_manager = GameManager()
+        self.wine_runner = WineRunner()
+
+        self._cards: dict[str, GameCard] = {}
+        self._selected_game: Game | None = None
+        self._hub_home_labels: dict[str, Gtk.Label] = {}
+        self._friends_signin_btn: Gtk.Button | None = None
+
+        self._restore_geometry()
+        self._build_ui()
+        self._connect_signals()
+
+        # Async game library refresh
+        self.game_manager.refresh_async(
+            callback=lambda: GLib.idle_add(self._reload_games)
+        )
+
+    # ------------------------------------------------------------------
+    # Geometry
+    # ------------------------------------------------------------------
+
+    def _restore_geometry(self) -> None:
+        self.set_default_size(
+            self.cfg.get("window_width", 1280),
+            self.cfg.get("window_height", 800),
+        )
+        if self.cfg.get("window_maximized", False):
+            self.maximize()
+
+    def _save_geometry(self) -> None:
+        if self.is_maximized():
+            self.cfg.set("window_maximized", True, autosave=False)
+        else:
+            w, h = self.get_width(), self.get_height()
+            self.cfg.set("window_width", w, autosave=False)
+            self.cfg.set("window_height", h, autosave=False)
+            self.cfg.set("window_maximized", False, autosave=False)
+        self.cfg.save()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+
+    def _build_ui(self) -> None:
+        # Outermost box: sidebar + content
+        root = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        root.add_css_class("bnet-root")
+
+        # ── Sidebar ────────────────────────────────────────────────────
+        self._sidebar = Sidebar(on_navigate=self._on_navigate)
+        root.append(self._sidebar)
+
+        # ── Main stack ─────────────────────────────────────────────────
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self._stack.set_transition_duration(180)
+        self._stack.set_hexpand(True)
+        self._stack.set_vexpand(True)
+
+        self._stack.add_named(self._build_games_view(), "games")
+        self._stack.add_named(self._build_home_view(), "home")
+        self._stack.add_named(self._build_friends_view(), "friends")
+        self._stack.add_named(self._build_shop_view(), "shop")
+        self._stack.add_named(self._build_news_view(), "news")
+        self._stack.add_named(self._build_settings_stub(), "settings")
+
+        # ── Toast overlay wraps the stack ──────────────────────────────
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(self._stack)
+        self._toast_overlay.set_hexpand(True)
+        root.append(self._toast_overlay)
+
+        # ── Header + body + status (ToolbarView since libadwaita 1.4) ──
+        header = self._build_headerbar()
+        status = self._build_statusbar()
+        if hasattr(Adw, "ToolbarView"):
+            shell = Adw.ToolbarView()
+            shell.add_top_bar(header)
+            shell.set_content(root)
+            shell.add_bottom_bar(status)
+        else:
+            shell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+            shell.append(header)
+            root.set_hexpand(True)
+            root.set_vexpand(True)
+            shell.append(root)
+            shell.append(status)
+
+        self.set_content(shell)
+        # Select after _stack exists (sidebar construction must not navigate early).
+        self._sidebar.select("games")
+        self._sync_account_button()
+
+    # -- Header bar ────────────────────────────────────────────────────
+
+    def _build_headerbar(self) -> Adw.HeaderBar:
+        hb = Adw.HeaderBar()
+        hb.add_css_class("bnet-headerbar")
+
+        # Search entry
+        self._search_entry = Gtk.SearchEntry()
+        # Gtk ≤4.8: use placeholder-text property; newer has set_placeholder_text().
+        if hasattr(self._search_entry, "set_placeholder_text"):
+            self._search_entry.set_placeholder_text("Search games…")
+        else:
+            self._search_entry.set_property("placeholder-text", "Search games…")
+        self._search_entry.set_size_request(240, -1)
+        self._search_entry.connect("search-changed", self._on_search_changed)
+        hb.set_title_widget(self._search_entry)
+
+        # Settings button
+        settings_btn = Gtk.Button()
+        settings_btn.set_icon_name("preferences-system-symbolic")
+        settings_btn.set_tooltip_text("Settings")
+        settings_btn.add_css_class("flat")
+        settings_btn.connect("clicked", self._on_settings_clicked)
+        hb.pack_end(settings_btn)
+
+        # Account / login button (Sign In / Sign Out + suggested styling via _sync_account_button)
+        self._account_btn = Gtk.Button(label="Sign In")
+        self._account_btn.connect("clicked", self._on_account_clicked)
+        hb.pack_end(self._account_btn)
+
+        # Refresh button
+        refresh_btn = Gtk.Button()
+        refresh_btn.set_icon_name("view-refresh-symbolic")
+        refresh_btn.set_tooltip_text("Refresh game library")
+        refresh_btn.add_css_class("flat")
+        refresh_btn.connect("clicked", self._on_refresh_clicked)
+        hb.pack_start(refresh_btn)
+
+        return hb
+
+    # -- Status bar ────────────────────────────────────────────────────
+
+    def _build_statusbar(self) -> Gtk.Box:
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        bar.add_css_class("bnet-status-bar")
+        bar.set_margin_start(16)
+        bar.set_margin_end(16)
+
+        self._status_label = Gtk.Label(label="Ready")
+        self._status_label.add_css_class("bnet-status-label")
+        self._status_label.set_halign(Gtk.Align.START)
+        self._status_label.set_hexpand(True)
+        bar.append(self._status_label)
+
+        runner = WineRunner()
+        wine_ver = runner.get_wine_version()
+        wine_label = Gtk.Label(label=wine_ver or "Wine not found")
+        wine_label.add_css_class(
+            "bnet-status-ok" if wine_ver != "Wine not found" else "bnet-status-error"
+        )
+        bar.append(wine_label)
+
+        wayland_label = Gtk.Label(label="Wayland ✓" if self._is_wayland() else "XWayland")
+        wayland_label.add_css_class("bnet-status-label")
+        bar.append(wayland_label)
+
+        return bar
+
+    @staticmethod
+    def _is_wayland() -> bool:
+        import os
+        return bool(os.environ.get("WAYLAND_DISPLAY"))
+
+    # -- Games view ────────────────────────────────────────────────────
+
+    def _build_games_view(self) -> Gtk.Box:
+        container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        container.add_css_class("bnet-content")
+
+        # Left: scrollable game grid
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        grid_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        grid_box.add_css_class("bnet-game-grid")
+
+        # Section header
+        header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        header.set_margin_bottom(20)
+
+        title = Gtk.Label(label="Your Games")
+        title.set_halign(Gtk.Align.START)
+        title.add_css_class("bnet-section-title")
+
+        subtitle = Gtk.Label(label="All Blizzard titles — installed games shown first")
+        subtitle.set_halign(Gtk.Align.START)
+        subtitle.add_css_class("bnet-section-subtitle")
+
+        header.append(title)
+        header.append(subtitle)
+        grid_box.append(header)
+
+        # FlowBox for responsive card grid
+        self._flowbox = Gtk.FlowBox()
+        self._flowbox.set_homogeneous(True)
+        self._flowbox.set_row_spacing(0)
+        self._flowbox.set_column_spacing(0)
+        self._flowbox.set_min_children_per_line(2)
+        self._flowbox.set_max_children_per_line(6)
+        self._flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._flowbox.add_css_class("bnet-game-grid")
+        grid_box.append(self._flowbox)
+
+        scroll.set_child(grid_box)
+        container.append(scroll)
+
+        # Right: detail panel
+        self._detail_panel = self._build_detail_panel()
+        container.append(self._detail_panel)
+
+        # Populate cards
+        self._populate_game_cards(self.game_manager.get_all())
+
+        return container
+
+    def _populate_game_cards(self, games: list[Game]) -> None:
+        # Clear existing
+        while child := self._flowbox.get_first_child():
+            self._flowbox.remove(child)
+        self._cards.clear()
+
+        for game in games:
+            card = GameCard(game)
+            card.connect_play(self._on_play_clicked)
+            card.connect_select(self._on_game_selected)
+            self._cards[game.id] = card
+            self._flowbox.append(card)
+
+        # Select first installed game
+        installed = [g for g in games if g.installed]
+        if installed:
+            self._select_game(installed[0])
+        elif games:
+            self._select_game(games[0])
+
+    # -- Detail panel ──────────────────────────────────────────────────
+
+    def _build_detail_panel(self) -> Gtk.Box:
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        panel.add_css_class("bnet-detail-panel")
+        panel.set_size_request(300, -1)
+
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        inner.set_margin_top(28)
+        inner.set_margin_bottom(28)
+        inner.set_margin_start(24)
+        inner.set_margin_end(24)
+
+        # Banner placeholder
+        self._detail_banner = Gtk.Box()
+        self._detail_banner.set_size_request(-1, 160)
+        self._detail_banner.add_css_class("bnet-game-banner")
+        inner.append(self._detail_banner)
+
+        self._detail_title = Gtk.Label(label="Select a game")
+        self._detail_title.set_halign(Gtk.Align.START)
+        self._detail_title.set_wrap(True)
+        self._detail_title.add_css_class("bnet-detail-title")
+        inner.append(self._detail_title)
+
+        self._detail_genre = Gtk.Label(label="")
+        self._detail_genre.set_halign(Gtk.Align.START)
+        self._detail_genre.add_css_class("bnet-detail-genre")
+        inner.append(self._detail_genre)
+
+        self._detail_desc = Gtk.Label(label="")
+        self._detail_desc.set_halign(Gtk.Align.START)
+        self._detail_desc.set_wrap(True)
+        self._detail_desc.add_css_class("bnet-detail-desc")
+        inner.append(self._detail_desc)
+
+        spacer = Gtk.Box()
+        spacer.set_vexpand(True)
+        inner.append(spacer)
+
+        self._detail_status = Gtk.Label(label="")
+        self._detail_status.set_halign(Gtk.Align.START)
+        self._detail_status.add_css_class("bnet-card-genre")
+        inner.append(self._detail_status)
+
+        self._detail_play_btn = Gtk.Button(label="PLAY")
+        self._detail_play_btn.add_css_class("bnet-detail-play-btn")
+        self._detail_play_btn.connect("clicked", self._on_detail_play_clicked)
+        inner.append(self._detail_play_btn)
+
+        panel.append(inner)
+        return panel
+
+    def _select_game(self, game: Game) -> None:
+        self._selected_game = game
+        self._detail_title.set_text(game.name)
+        self._detail_genre.set_text(game.genre.upper())
+
+        if game.installed:
+            self._detail_desc.set_text(game.description)
+            self._detail_status.set_text("Installed")
+            self._detail_play_btn.set_label("PLAY")
+            self._detail_play_btn.set_sensitive(not self.wine_runner.is_running(game.id))
+        else:
+            tip = (
+                "\n\nTip: Blizzard's page usually downloads Battle.net-Setup.exe first. "
+                "Run it with Wine, install the game inside Battle.net, then Refresh."
+            )
+            self._detail_desc.set_text(game.description + tip)
+            self._detail_status.set_text("Not installed")
+            self._detail_play_btn.set_label("INSTALL")
+            self._detail_play_btn.set_sensitive(True)
+
+    # -- Hub pages (Home / Friends / Shop / News) ─────────────────────
+
+    def _build_home_view(self) -> Gtk.Widget:
+        page, labels = hub_pages.build_home_page(
+            on_browse_games=self._go_to_games,
+            on_refresh=lambda: self._on_refresh_clicked(None),
+        )
+        self._hub_home_labels = labels
+        self._update_home_stats()
+        return page
+
+    def _build_friends_view(self) -> Gtk.Widget:
+        page, sign_btn = hub_pages.build_friends_page(
+            on_sign_in=lambda: self._on_account_clicked(None),
+            on_open_url=self._open_external_url,
+        )
+        self._friends_signin_btn = sign_btn
+        self._refresh_friends_signin_button()
+        return page
+
+    def _build_shop_view(self) -> Gtk.Widget:
+        return hub_pages.build_shop_page(self._open_external_url)
+
+    def _build_news_view(self) -> Gtk.Widget:
+        return hub_pages.build_news_page(self._open_external_url)
+
+    def _go_to_games(self) -> None:
+        self._stack.set_visible_child_name("games")
+        self._sidebar.select("games")
+
+    def _open_external_url(self, url: str) -> None:
+        if not open_default_browser(url):
+            self._toast("Could not open a web browser for this link.", is_error=True)
+
+    def _update_home_stats(self) -> None:
+        if not self._hub_home_labels:
+            return
+        games = self.game_manager.get_all()
+        n_inst = sum(1 for g in games if g.installed)
+        self._hub_home_labels["installed"].set_text(str(n_inst))
+        self._hub_home_labels["total"].set_text(str(len(games)))
+        wv = self.wine_runner.get_wine_version()
+        self._hub_home_labels["wine"].set_text(
+            wv if wv != "Wine not found" else "Not found"
+        )
+        self._hub_home_labels["account"].set_text(
+            "Signed in" if BNetAuth().is_authenticated() else "Not signed in"
+        )
+
+    def _refresh_friends_signin_button(self) -> None:
+        btn = self._friends_signin_btn
+        if not btn:
+            return
+        if BNetAuth().is_authenticated():
+            btn.set_label("Signed in (friend list API not wired yet)")
+            btn.set_sensitive(False)
+        else:
+            btn.set_label("Sign in with Battle.net")
+            btn.set_sensitive(True)
+
+    def _sync_hub_page(self, view_id: str) -> None:
+        if view_id == "home":
+            self._update_home_stats()
+        elif view_id == "friends":
+            self._refresh_friends_signin_button()
+
+    # -- Settings stub (sidebar) ─────────────────────────────────────
+
+    def _build_settings_stub(self) -> Adw.StatusPage:
+        page = Adw.StatusPage()
+        page.set_icon_name("preferences-system-symbolic")
+        page.set_title("Settings")
+        page.set_description("Open Settings from the toolbar button above.")
+        return page
+
+    # ------------------------------------------------------------------
+    # Signal connections
+    # ------------------------------------------------------------------
+
+    def _connect_signals(self) -> None:
+        self.connect("close-request", self._on_close)
+
+    # ------------------------------------------------------------------
+    # Callbacks
+    # ------------------------------------------------------------------
+
+    def _on_navigate(self, view_id: str) -> None:
+        self._stack.set_visible_child_name(view_id)
+        self._search_entry.set_visible(view_id == "games")
+        self._sync_hub_page(view_id)
+        if view_id == "settings":
+            GLib.idle_add(self._open_settings_dialog)
+
+    def _on_game_selected(self, game: Game) -> None:
+        self._select_game(game)
+
+    def _on_play_clicked(self, game: Game) -> None:
+        self._launch_game(game)
+
+    def _on_detail_play_clicked(self, _) -> None:
+        if self._selected_game:
+            self._launch_game(self._selected_game)
+
+    def _launch_game(self, game: Game) -> None:
+        if not game.installed:
+            self._start_install(game)
+            return
+
+        if self.wine_runner.is_running(game.id):
+            self._toast(f"{game.name} is already running.")
+            return
+
+        # Update UI
+        if card := self._cards.get(game.id):
+            card.set_playing(True)
+        self._detail_play_btn.set_sensitive(False)
+        self._set_status(f"Launching {game.name}…")
+
+        try:
+            self.wine_runner.launch(
+                game_id=game.id,
+                executable=game.install_path,
+                on_exit=lambda rc: GLib.idle_add(self._on_game_exited, game.id, rc),
+            )
+            self.game_manager.update_last_played(game.id)
+            self._set_status(f"{game.name} is running")
+        except WineError as e:
+            self._toast(f"Launch failed: {e}", is_error=True)
+            if card := self._cards.get(game.id):
+                card.set_playing(False)
+            self._detail_play_btn.set_sensitive(True)
+            self._set_status("Launch failed")
+
+    def _start_install(self, game: Game) -> None:
+        """Open Blizzard download page and start Battle.net.exe in Wine when available."""
+        url = self.game_manager.install_download_url(game.id)
+        browser_ok = open_default_browser(url)
+        if not browser_ok:
+            print(
+                "bnetlauncher: could not open a browser; open this URL manually:\n"
+                f"  {url}\n",
+                file=sys.stderr,
+                flush=True,
+            )
+            print_browser_open_hints()
+
+        bnet_exe = self.wine_runner.find_battle_net_executable()
+        if bnet_exe:
+            if self.wine_runner.is_running(_BNET_AGENT_GAME_ID):
+                if browser_ok:
+                    self._toast(
+                        f"Battle.net is already running — install {game.name} there, "
+                        "then click refresh."
+                    )
+                else:
+                    self._toast(
+                        "Battle.net is already running. Install the game there, then refresh."
+                    )
+                self._set_status("Use Battle.net to install, then refresh the library")
+                return
+            prefix = self.wine_runner.wine_prefix_for_exe(bnet_exe)
+            if not prefix:
+                if browser_ok:
+                    self._toast(
+                        f"Opened install page for {game.name}. "
+                        "Could not detect Wine prefix for Battle.net — install via browser."
+                    )
+                else:
+                    self._toast(
+                        "Could not open browser or detect Battle.net prefix. "
+                        "Install Battle.net from download.battle.net, then refresh.",
+                        is_error=True,
+                    )
+                return
+            try:
+                self.wine_runner.launch(
+                    game_id=_BNET_AGENT_GAME_ID,
+                    executable=bnet_exe,
+                    prefix=prefix,
+                    on_exit=lambda rc: GLib.idle_add(
+                        self._on_bnet_agent_exited, rc
+                    ),
+                )
+                if browser_ok:
+                    self._toast(
+                        f"Opened Battle.net and the Blizzard page for {game.name}. "
+                        "Install in the app, then refresh."
+                    )
+                else:
+                    self._toast(
+                        f"Started Battle.net — install {game.name}, then refresh the library."
+                    )
+                self._set_status("Battle.net running — after install, click refresh")
+            except WineError as e:
+                msg = f"Could not start Battle.net: {e}"
+                if browser_ok:
+                    msg += " The download page may still be open in your browser."
+                self._toast(msg, is_error=True)
+        elif browser_ok:
+            self._toast(
+                f"Opened Blizzard's page for {game.name}. "
+                "It usually downloads Battle.net-Setup.exe — run that with Wine, "
+                "then install the game inside Battle.net and click refresh."
+            )
+            self._set_status("Run Battle.net-Setup.exe in Wine, then refresh")
+        else:
+            self._toast(
+                "Could not open a browser. Install Battle.net from "
+                "https://download.battle.net then refresh the library.",
+                is_error=True,
+            )
+            self._set_status("Install Battle.net manually, then refresh")
+
+    def _on_bnet_agent_exited(self, returncode: int) -> None:
+        self._set_status(
+            "Ready" if returncode == 0 else f"Battle.net exited with code {returncode}"
+        )
+
+    def _on_game_exited(self, game_id: str, returncode: int) -> None:
+        if card := self._cards.get(game_id):
+            card.set_playing(False)
+        if self._selected_game and self._selected_game.id == game_id:
+            self._detail_play_btn.set_sensitive(True)
+        self._set_status(
+            "Ready" if returncode == 0 else f"Game exited with code {returncode}"
+        )
+
+    def _on_search_changed(self, entry: Gtk.SearchEntry) -> None:
+        query = entry.get_text().lower().strip()
+        games = self.game_manager.get_all()
+        if query:
+            games = [g for g in games if query in g.name.lower() or query in g.genre.lower()]
+        self._populate_game_cards(games)
+
+    def _on_refresh_clicked(self, _) -> None:
+        self._set_status("Scanning game library…")
+        self.game_manager.refresh_async(
+            callback=lambda: GLib.idle_add(self._reload_games)
+        )
+
+    def _on_account_clicked(self, _) -> None:
+        auth = BNetAuth()
+        if auth.is_authenticated():
+            auth.clear_tokens()
+            self._sync_account_button()
+            self._toast("Signed out — tokens cleared from this device.")
+            self._refresh_friends_signin_button()
+            self._update_home_stats()
+            return
+        self._account_btn.set_sensitive(False)
+        self._account_btn.set_label("Signing in…")
+        auth.start_auth_flow(
+            on_success=lambda token: GLib.idle_add(self._on_auth_success, token),
+            on_error=lambda msg: GLib.idle_add(self._on_auth_error, msg),
+        )
+
+    def _on_auth_success(self, token: str) -> None:
+        self._account_btn.set_sensitive(True)
+        self._sync_account_button()
+        self._toast("Signed in successfully!")
+        self._refresh_friends_signin_button()
+        self._update_home_stats()
+
+    def _on_auth_error(self, msg: str) -> None:
+        self._account_btn.set_sensitive(True)
+        self._sync_account_button()
+        self._toast(f"Sign-in failed: {msg}", is_error=True)
+        self._refresh_friends_signin_button()
+        self._update_home_stats()
+
+    def _on_settings_clicked(self, _) -> None:
+        self._open_settings_dialog()
+
+    def _on_close(self, _) -> bool:
+        self._save_geometry()
+        return False  # allow close
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _sync_account_button(self) -> None:
+        """Header label reflects stored tokens after startup and after auth changes."""
+        authed = BNetAuth().is_authenticated()
+        self._account_btn.set_sensitive(True)
+        if authed:
+            self._account_btn.set_label("Sign Out")
+            self._account_btn.set_tooltip_text(
+                "Signed in — click to clear Battle.net tokens on this device"
+            )
+            self._account_btn.remove_css_class("suggested-action")
+        else:
+            self._account_btn.set_label("Sign In")
+            self._account_btn.set_tooltip_text("Sign in with Battle.net (OAuth)")
+            self._account_btn.add_css_class("suggested-action")
+
+    def _reload_games(self) -> None:
+        self._populate_game_cards(self.game_manager.get_all())
+        installed_count = sum(1 for g in self.game_manager.get_all() if g.installed)
+        self._set_status(f"Library refreshed — {installed_count} game(s) installed")
+        self._update_home_stats()
+
+    def _set_status(self, msg: str) -> None:
+        self._status_label.set_text(msg)
+
+    def _toast(self, message: str, is_error: bool = False) -> None:
+        # Adw.Toast title is Pango markup. Newlines break parsing across "lines" with raw
+        # URLs; collapse whitespace, then escape &, <, >.
+        text = " ".join((message or "").split())
+        safe_title = GLib.markup_escape_text(text, -1)
+        toast = Adw.Toast(title=safe_title)
+        toast.set_timeout(12 if len(text) > 120 else 4)
+        self._toast_overlay.add_toast(toast)
+
+    def _open_settings_dialog(self) -> None:
+        from bnetlauncher.ui.settings import SettingsDialog
+        SettingsDialog(parent=self)
+        # Switch back to games view
+        self._stack.set_visible_child_name("games")
+        self._sidebar.select("games")
