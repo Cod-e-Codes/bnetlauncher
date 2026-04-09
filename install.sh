@@ -42,6 +42,7 @@ install_deps() {
             sudo apt-get update -qq
             sudo apt-get install -y \
                 python3 \
+                python3-pip \
                 python3-gi \
                 python3-gi-cairo \
                 gir1.2-gtk-4.0 \
@@ -50,6 +51,7 @@ install_deps() {
                 wine \
                 wine64 \
                 winetricks \
+                winbind \
                 xwayland
             ;;
         fedora|rhel|centos)
@@ -83,10 +85,78 @@ install_deps() {
         *)
             yellow "Unknown distro '${DISTRO}'. Attempting apt-get (may fail)."
             sudo apt-get install -y \
-                python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 wine wine64 xwayland || true
+                python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 wine wine64 winbind xwayland || true
             ;;
     esac
     green "System dependencies installed."
+}
+
+# ── ntlm_auth (winbind) — Wine/Battle.net installer expects this on PATH
+ensure_ntlm_auth() {
+    if command -v ntlm_auth &>/dev/null; then
+        return 0
+    fi
+    echo ""
+    yellow "ntlm_auth not found (install winbind / samba tools); installing…"
+    case "${DISTRO}" in
+        ubuntu|debian|linuxmint|pop)
+            sudo apt-get update -qq
+            sudo apt-get install -y winbind
+            ;;
+        fedora|rhel|centos)
+            sudo dnf install -y samba-winbind-clients 2>/dev/null \
+                || sudo dnf install -y samba-winbind
+            ;;
+        arch|manjaro|endeavouros|garuda)
+            sudo pacman -Sy --noconfirm samba
+            ;;
+        opensuse*|suse)
+            sudo zypper install -y samba-winbind
+            ;;
+        *)
+            sudo apt-get update -qq 2>/dev/null || true
+            sudo apt-get install -y winbind || true
+            ;;
+    esac
+    if command -v ntlm_auth &>/dev/null; then
+        green "ntlm_auth is on PATH."
+    else
+        yellow "ntlm_auth still missing; install your distro's winbind/samba-winbind package."
+    fi
+}
+
+# ── Wine must exist even when GTK4 skip avoids full install_deps ─────
+ensure_wine() {
+    if command -v wine64 &>/dev/null || command -v wine &>/dev/null; then
+        return 0
+    fi
+    echo ""
+    yellow "Wine not found; installing Wine (and related tools)…"
+    case "${DISTRO}" in
+        ubuntu|debian|linuxmint|pop)
+            sudo apt-get update -qq
+            sudo apt-get install -y wine wine64 winetricks winbind xwayland
+            ;;
+        fedora|rhel|centos)
+            sudo dnf install -y wine samba-winbind-clients xorg-x11-server-Xwayland
+            ;;
+        arch|manjaro|endeavouros|garuda)
+            sudo pacman -Sy --noconfirm wine winetricks samba xorg-xwayland
+            ;;
+        opensuse*|suse)
+            sudo zypper install -y wine samba-winbind xwayland
+            ;;
+        *)
+            yellow "Unknown distro '${DISTRO}'. Trying apt packages for Wine…"
+            sudo apt-get update -qq 2>/dev/null || true
+            sudo apt-get install -y wine wine64 winbind xwayland winetricks || true
+            ;;
+    esac
+    if command -v wine64 &>/dev/null || command -v wine &>/dev/null; then
+        green "Wine installed."
+    else
+        red "Wine still not found. Install wine/wine64 manually for your distro."
+    fi
 }
 
 # ── Check if GTK4 bindings are already present ─────────────────────────
@@ -104,13 +174,32 @@ if check_gtk4; then
 else
     install_deps
 fi
+ensure_wine
+ensure_ntlm_auth
 
 # ── Install the Python package ─────────────────────────────────────────
 echo ""
 yellow "Installing bnetlauncher Python package…"
-pip3 install --user --break-system-packages -e "${REPO_DIR}" 2>/dev/null \
-    || pip3 install --user -e "${REPO_DIR}"
+# PEP 660 editable installs need a current pip + setuptools (Ubuntu/Debian
+# system packages are often too old for pyproject-only projects).
+python3 -m pip install --user --upgrade pip setuptools wheel \
+    --break-system-packages 2>/dev/null \
+    || python3 -m pip install --user --upgrade pip setuptools wheel
+python3 -m pip install --user --break-system-packages -e "${REPO_DIR}" 2>/dev/null \
+    || python3 -m pip install --user -e "${REPO_DIR}"
 green "Python package installed."
+
+# ── ~/.local/bin on PATH (Ubuntu GUI terminals often skip ~/.profile) ─
+BASHRC="${HOME}/.bashrc"
+MARK="# bnetlauncher: pip --user scripts (~/.local/bin)"
+if [ -f "${BASHRC}" ] && ! grep -qF "${MARK}" "${BASHRC}" 2>/dev/null; then
+    {
+        echo ""
+        echo "${MARK}"
+        echo 'case ":${PATH}:" in *:"${HOME}/.local/bin":*) ;; *) export PATH="${HOME}/.local/bin:${PATH}" ;; esac'
+    } >> "${BASHRC}"
+    yellow "Added ~/.local/bin to PATH in ${BASHRC} — run:  source ~/.bashrc  (or open a new terminal)"
+fi
 
 # ── Desktop entry ──────────────────────────────────────────────────────
 echo ""

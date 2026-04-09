@@ -1,7 +1,8 @@
 """
 Install checks and repair guidance.
 
-Each game uses its own Wine prefix under the configured prefix directory.
+Launches reuse the game's bottle when the .exe lives under drive_c; otherwise
+the Blizzard app prefix (or ~/.wine) is used — see WineRunner.resolve_launch_prefix.
 Blizzard's Scan and Repair lives inside the official desktop app; this module
 surfaces checks and guidance only.
 """
@@ -31,13 +32,10 @@ def verify_install(game: Game, wine_runner: WineRunner) -> tuple[bool, list[str]
     elif not os.access(exe, os.R_OK):
         issues.append(f"Cannot read executable: {exe}")
 
-    prefix = wine_runner.wine_prefix_for_exe(str(exe))
-    if not prefix:
-        issues.append("Could not resolve a Wine prefix from this install path.")
-    else:
-        drive_c = Path(prefix) / "drive_c"
-        if not drive_c.is_dir():
-            issues.append(f"Prefix looks incomplete (no drive_c): {prefix}")
+    prefix = wine_runner.resolve_launch_prefix(str(exe), game.id)
+    drive_c = Path(prefix) / "drive_c"
+    if not drive_c.is_dir():
+        issues.append(f"Wine prefix has no drive_c: {prefix}")
 
     if game.id == "wow" and exe.is_file():
         _ok_wow, wow_issues = wow_addons.verify_wow_addon_layout(exe)

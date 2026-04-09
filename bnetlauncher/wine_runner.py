@@ -63,6 +63,8 @@ class WineRunner:
         Raises WineError if Wine is not found.
         """
         wine_bin = self._resolve_wine()
+        if prefix is None:
+            prefix = self.resolve_launch_prefix(executable, game_id)
         env = self._build_env(prefix, game_id)
         cmd = self._build_command(wine_bin, executable, args or [])
 
@@ -112,6 +114,28 @@ class WineRunner:
                 return str(cur.parent)
             cur = cur.parent
         return None
+
+    def resolve_launch_prefix(self, executable: str, game_id: str) -> str:
+        """
+        Pick WINEPREFIX for a game .exe.
+
+        If the game lives under …/drive_c/… we use that bottle. If it lives on a
+        plain Linux path (e.g. a mounted Windows drive or shared folder), there
+        is no drive_c in the path — using an empty per-game prefix makes Wow.exe
+        crash immediately; reuse the Blizzard app prefix (or ~/.wine) instead.
+        """
+        p = self.wine_prefix_for_exe(executable)
+        if p:
+            return p
+        bnet = self.find_battle_net_executable()
+        if bnet:
+            bp = self.wine_prefix_for_exe(bnet)
+            if bp:
+                return bp
+        home_wine = Path.home() / ".wine"
+        if (home_wine / "drive_c").is_dir():
+            return str(home_wine)
+        return str(Path(self.cfg.get("wine_prefix_dir")) / game_id)
 
     def find_battle_net_executable(self) -> Optional[str]:
         """Locate Blizzard desktop agent executables under Wine prefixes and custom paths."""
@@ -225,9 +249,7 @@ class WineRunner:
 
         # ── Wine prefix ────────────────────────────────────────────────
         if prefix is None:
-            prefix = str(
-                Path(self.cfg.get("wine_prefix_dir")) / game_id
-            )
+            prefix = str(Path(self.cfg.get("wine_prefix_dir")) / game_id)
         Path(prefix).mkdir(parents=True, exist_ok=True)
         env["WINEPREFIX"] = prefix
         env["WINEARCH"] = "win64"

@@ -277,7 +277,9 @@ class GameManager:
 
         # User-configured extra paths
         for p in self.cfg.get("custom_game_paths", []):
-            paths.append(Path(p))
+            raw = os.path.expanduser(str(p).strip())
+            if raw:
+                paths.append(Path(raw))
 
         # Steam Battle.net installs (via Proton prefix)
         steam_compat = Path.home() / ".steam/steam/steamapps/compatdata"

@@ -18,8 +18,11 @@ Games library on Linux (Ubuntu, Wine, Wayland):
 - **Wayland-native:** GTK4/libadwaita Wayland client; falls back to X11/XWayland.
 - **Resize-safe launches:** Wine env tweaks to avoid `ChangeDisplaySettings` /
   XWayland crash loops.
-- **Wine / Proton:** System Wine or Proton; **one prefix per game id** under
-  `wine_prefix_dir` (see config).
+- **Wine / Proton:** System Wine or Proton. Installs under `…/drive_c/…` use that
+  bottle; game files on a normal Linux path (e.g. a mounted Windows drive) still
+  **launch with the Blizzard desktop app’s prefix** (or `~/.wine`) so DLLs and
+  registry match. Per-game directories under `wine_prefix_dir` are created when
+  needed (see config).
 - **Catalogue:** Detects common Blizzard installs under scanned prefixes and
   custom paths. Titles that are a poor fit for Linux/Wine (e.g. some
   anti-cheat FPS games) are **hidden by default**; enable **Settings → Library →
@@ -76,6 +79,7 @@ Flat tree at repo root:
 | `gir1.2-gtk-4.0` | GTK4 typelib |
 | `gir1.2-adw-1` | libadwaita typelib |
 | `wine` / `wine64` | Windows game compatibility |
+| `winbind` | Provides `ntlm_auth` on PATH (Battle.net / Wine installer often needs it) |
 | `xwayland` | XWayland for Wine (most compositors bundle this) |
 
 Optional: `winetricks`, `dxvk`, Proton (from Steam)
@@ -91,13 +95,18 @@ bash install.sh
 ```
 
 `install.sh` detects your distro (Ubuntu/Debian/Fedora/Arch/openSUSE) and
-installs system packages before installing the Python package with `pip`.
+installs system packages (including **Wine**, **winbind** for `ntlm_auth`, and
+**python3-pip** on Debian-based distros). It upgrades **pip / setuptools /
+wheel** before an editable install (PEP 660), appends **`~/.local/bin`** to
+`~/.bashrc` when needed, and ensures **Wine** is present even if GTK packages
+were already installed.
 
 **Manual install:**
 
 ```bash
 # Ubuntu / Debian
-sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 wine wine64 xwayland
+sudo apt install python3-pip python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 \
+  wine wine64 winbind xwayland winetricks
 
 # Arch / Manjaro
 sudo pacman -S python-gobject gtk4 libadwaita wine xorg-xwayland
@@ -182,14 +191,21 @@ browser troubleshooting.
 
 ### Adding games manually
 
-Use **Refresh** or **Settings → Wine / Proton → Custom Game Paths** for extra
-scan directories.
+Use **Settings → Library → Extra scan folders** to add directories that contain
+Blizzard game roots (e.g. the parent of `World of Warcraft/`). Paths are stored
+in `custom_game_paths` in the config file. Click **Refresh** (or change
+**Show unsupported titles**) to rescan the library.
+
+**Launch prefix:** If the game `.exe` is not under a Wine `drive_c` tree, the
+launcher runs it with the **same `WINEPREFIX` as the Blizzard desktop app**
+(when detected), not an empty per-game bottle.
 
 ### World of Warcraft add-ons
 
-1. Install WoW via the Blizzard desktop app in Wine so **bnetlauncher** detects
+1. Install WoW (in Wine or on a mounted drive) so **bnetlauncher** can find
    `Wow.exe` or `WowClassic.exe` under `World of Warcraft/_retail_` or
    `World of Warcraft/_classic_` (and other `_…_` product folders Blizzard adds).
+   Use **Extra scan folders** if the game lives outside the scanned Wine prefixes.
 2. Select **World of Warcraft** in **Games**, then **Open Add-ons folder…** and
    choose the product line (e.g. **Retail** or **Classic**).
 3. The launcher ensures `Interface/AddOns` exists and opens that directory. Drop
@@ -213,7 +229,7 @@ bnetlauncher/
 ├── game_manager.py   Catalogue, scan, SQLite, get_library_games()
 ├── install_health.py Verify install paths; repair guidance text
 ├── wow_addons.py     WoW `Interface/AddOns` paths; open folder (xdg-open)
-├── wine_runner.py    Wine/Proton launch, per-game WINEPREFIX
+├── wine_runner.py    Wine/Proton launch; prefix resolution for external installs
 └── ui/
     ├── game_card.py
     ├── hub_pages.py

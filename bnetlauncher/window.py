@@ -806,9 +806,16 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _open_settings_dialog(self) -> None:
         from bnetlauncher.ui.settings import SettingsDialog
+
+        def _on_library_prefs_changed() -> None:
+            # Rescan disk (custom paths, etc.) then refresh the grid.
+            self.game_manager.refresh_async(
+                callback=lambda: GLib.idle_add(self._reload_games),
+            )
+
         SettingsDialog(
             parent=self,
-            on_library_prefs_changed=lambda: GLib.idle_add(self._reload_games),
+            on_library_prefs_changed=_on_library_prefs_changed,
         )
         # Switch back to games view
         self._stack.set_visible_child_name("games")

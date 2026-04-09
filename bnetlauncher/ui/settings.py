@@ -3,6 +3,7 @@ Settings UI: Adw.PreferencesDialog on libadwaita ≥1.2, else PreferencesWindow 
 """
 from __future__ import annotations
 
+import os
 from typing import Callable, Optional
 
 import gi
@@ -136,6 +137,33 @@ class SettingsDialog(_PrefBase):
             )
         )
         page.add(group)
+
+        paths_group = Adw.PreferencesGroup(
+            title="Extra scan folders",
+            description=(
+                "Directories to search for Blizzard installs (in addition to Wine "
+                "prefixes). Add the folder that contains game roots such as "
+                "“World of Warcraft” or “Diablo IV” — for example /mnt/g_drive if "
+                "WoW is at /mnt/g_drive/World of Warcraft/."
+            ),
+        )
+        self._custom_paths_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        paths_group.add(self._custom_paths_box)
+        self._rebuild_custom_path_rows()
+
+        # Plain Gtk.Button is not a PreferencesRow; some libadwaita versions ignore
+        # clicks. Use ActionRow + suffix (same pattern as remove buttons on paths).
+        add_row = Adw.ActionRow()
+        add_row.set_title("Add folder…")
+        add_row.set_subtitle("Browse for a directory that contains Blizzard game folders")
+        add_btn = Gtk.Button(label="Browse…")
+        add_btn.add_css_class("pill")
+        add_btn.set_valign(Gtk.Align.CENTER)
+        add_btn.connect("clicked", self._on_add_scan_folder_clicked)
+        add_row.add_suffix(add_btn)
+        paths_group.add(add_row)
+        page.add(paths_group)
+
         self.add(page)
 
     # ------------------------------------------------------------------
@@ -187,6 +215,105 @@ class SettingsDialog(_PrefBase):
 
     def _save_region(self, row, _pspec, regions):
         self.cfg.set("bnet_region", regions[row.get_selected()])
+
+    @staticmethod
+    def _norm_scan_path(path: str) -> str:
+        p = os.path.normpath(os.path.expanduser(path.strip()))
+        try:
+            return os.path.abspath(p)
+        except OSError:
+            return p
+
+    def _get_custom_paths(self) -> list[str]:
+        raw = self.cfg.get("custom_game_paths", [])
+        if not isinstance(raw, list):
+            return []
+        out: list[str] = []
+        for x in raw:
+            s = str(x).strip()
+            if s:
+                out.append(s)
+        return out
+
+    def _persist_custom_paths(self, paths: list[str]) -> None:
+        seen: set[str] = set()
+        unique: list[str] = []
+        for p in paths:
+            key = self._norm_scan_path(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(p.strip())
+        self.cfg.set("custom_game_paths", unique)
+        self._rebuild_custom_path_rows()
+        if self._on_library_prefs_changed:
+            self._on_library_prefs_changed()
+
+    def _rebuild_custom_path_rows(self) -> None:
+        while True:
+            child = self._custom_paths_box.get_first_child()
+            if child is None:
+                break
+            self._custom_paths_box.remove(child)
+
+        paths = self._get_custom_paths()
+        if not paths:
+            empty = Gtk.Label(label="No extra folders. Add one if games live outside Wine prefixes.")
+            empty.add_css_class("dim-label")
+            empty.set_halign(Gtk.Align.START)
+            empty.set_margin_top(6)
+            empty.set_margin_bottom(6)
+            self._custom_paths_box.append(empty)
+            return
+
+        for path in paths:
+            row = Adw.ActionRow()
+            disp = path
+            if len(disp) > 64:
+                disp = "…" + disp[-62:]
+            row.set_title(disp)
+            row.set_subtitle(path)
+
+            rm = Gtk.Button.new_from_icon_name("edit-delete-symbolic")
+            rm.add_css_class("flat")
+            rm.set_valign(Gtk.Align.CENTER)
+            rm.set_tooltip_text("Remove this folder from scanning")
+            rm.connect("clicked", self._on_remove_custom_path_clicked, path)
+            row.add_suffix(rm)
+            self._custom_paths_box.append(row)
+
+    def _on_remove_custom_path_clicked(self, _btn, path: str) -> None:
+        paths = [p for p in self._get_custom_paths() if self._norm_scan_path(p) != self._norm_scan_path(path)]
+        self._persist_custom_paths(paths)
+
+    def _on_add_scan_folder_clicked(self, _btn) -> None:
+        # Modal Gtk dialog is more reliable than FileChooserNative + get_root() on
+        # Wayland / older GTK when nested under PreferencesDialog.
+        dlg = Gtk.FileChooserDialog(
+            title="Add folder to scan for games",
+            transient_for=self,
+            modal=True,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Add", Gtk.ResponseType.ACCEPT)
+        dlg.set_default_response(Gtk.ResponseType.ACCEPT)
+
+        def on_response(dialog: Gtk.FileChooserDialog, response: int) -> None:
+            if response == Gtk.ResponseType.ACCEPT:
+                gfile = dialog.get_file()
+                if gfile:
+                    p = gfile.get_path()
+                    if p:
+                        paths = list(self._get_custom_paths())
+                        np = self._norm_scan_path(p)
+                        if not any(self._norm_scan_path(x) == np for x in paths):
+                            paths.append(p)
+                            self._persist_custom_paths(paths)
+            dialog.destroy()
+
+        dlg.connect("response", on_response)
+        dlg.present()
 
     # ------------------------------------------------------------------
     # Wine page
