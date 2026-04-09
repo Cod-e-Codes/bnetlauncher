@@ -184,8 +184,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._status_label.set_hexpand(True)
         bar.append(self._status_label)
 
-        runner = WineRunner()
-        wine_ver = runner.get_wine_version()
+        wine_ver = self.wine_runner.get_wine_version()
         wine_label = Gtk.Label(label=wine_ver or "Wine not found")
         wine_label.add_css_class(
             "bnet-status-ok" if wine_ver != "Wine not found" else "bnet-status-error"
@@ -470,15 +469,23 @@ class MainWindow(Adw.ApplicationWindow):
         self._hub_home_labels["wine"].set_text(
             wv if wv != "Wine not found" else "Not found"
         )
-        self._hub_home_labels["account"].set_text(
-            "Signed in" if BNetAuth().is_authenticated() else "Not signed in"
-        )
+        auth = BNetAuth()
+        if auth.has_stored_token():
+            acct = (
+                "Signed in"
+                if auth.is_authenticated()
+                else "Signed in (session expired — use Sign Out and sign in again)"
+            )
+        else:
+            acct = "Not signed in"
+        self._hub_home_labels["account"].set_text(acct)
 
     def _refresh_friends_signin_button(self) -> None:
         btn = self._friends_signin_btn
         if not btn:
             return
-        if BNetAuth().is_authenticated():
+        auth = BNetAuth()
+        if auth.has_stored_token():
             btn.set_label("Signed in (friend list API not wired yet)")
             btn.set_sensitive(False)
         else:
@@ -732,7 +739,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_account_clicked(self, _) -> None:
         auth = BNetAuth()
-        if auth.is_authenticated():
+        if auth.has_stored_token():
             auth.clear_tokens()
             self._sync_account_button()
             self._toast("Signed out. Tokens cleared on this device.")
@@ -772,14 +779,19 @@ class MainWindow(Adw.ApplicationWindow):
     # ------------------------------------------------------------------
 
     def _sync_account_button(self) -> None:
-        """Header label reflects stored tokens after startup and after auth changes."""
-        authed = BNetAuth().is_authenticated()
+        """Header label reflects stored OAuth token (Sign Out if any token on disk)."""
+        auth = BNetAuth()
+        signed_in = auth.has_stored_token()
         self._account_btn.set_sensitive(True)
-        if authed:
+        if signed_in:
+            tip = "Click to clear Blizzard OAuth tokens on this device."
+            if not auth.is_authenticated():
+                tip = (
+                    "Token saved but session expired or clock skew. "
+                    "Sign out and sign in again, or check the system clock. " + tip
+                )
             self._account_btn.set_label("Sign Out")
-            self._account_btn.set_tooltip_text(
-                "Signed in. Click to clear Blizzard OAuth tokens on this device."
-            )
+            self._account_btn.set_tooltip_text(tip)
             self._account_btn.remove_css_class("suggested-action")
         else:
             self._account_btn.set_label("Sign In")

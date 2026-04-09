@@ -167,9 +167,11 @@ The header **search** applies only on **Games**.
 3. In the launcher: **Settings → Authentication**, enter **Client ID** and **Client Secret**, region if needed.
 4. **Sign In.** A browser opens; after approval, the app receives the callback on **port 6547** and exchanges the code for tokens.
 
-**Account button:** When tokens exist, the header shows **Sign Out** (clears stored tokens on this device).
+**Account button:** The header shows **Sign Out** whenever an **access token is saved** (even if it is expired or the system clock is wrong). **API calls** still require a **non-expired** token; if the clock is skewed, sign out and sign in again after fixing time sync.
 
 **OAuth:** The callback server listens on **`0.0.0.0:6547`** so **WSL2** can receive redirects when the browser runs on Windows.
+
+**Debug:** Set **`BNETLAUNCHER_DEBUG=1`** to print **config load/save errors** to **stderr** (secrets and tokens are not logged).
 
 **Opening links (WSL):** If Windows **interop** is enabled (`[interop] enabled=true` in `/etc/wsl.conf`, then `wsl --shutdown` from Windows), the app can launch Windows `rundll32` / PowerShell / etc. If you see **`Exec format error`** for `/mnt/c/.../*.exe`, interop is off: install a **Linux** browser (`sudo apt install firefox`) or fix interop. The app then tries `wslview`, Python `webbrowser`, `xdg-open`, `gio`, and common browser binaries. Only `webbrowser.open()` returning **`True`** counts as success. If opening fails, the URL is printed to **`stderr`**; for **Sign In**, the server **keeps running** so you can paste the URL manually.
 

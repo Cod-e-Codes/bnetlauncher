@@ -3,8 +3,23 @@ Configuration management. Stores settings in ~/.config/bnetlauncher/config.json.
 """
 import json
 import os
+import sys
+import traceback
 from pathlib import Path
 from typing import Any
+
+
+def _debug_enabled() -> bool:
+    v = (os.environ.get("BNETLAUNCHER_DEBUG") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _debug_log(msg: str, exc: BaseException | None = None) -> None:
+    if not _debug_enabled():
+        return
+    print(f"[bnetlauncher:debug] {msg}", file=sys.stderr, flush=True)
+    if exc is not None:
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
 
 
 _CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "bnetlauncher"
@@ -72,15 +87,15 @@ class Config:
                 with CONFIG_FILE.open() as f:
                     saved = json.load(f)
                 self._data.update(saved)
-            except (json.JSONDecodeError, OSError):
-                pass  # start fresh on corrupt file
+            except (json.JSONDecodeError, OSError) as e:
+                _debug_log(f"config load failed ({CONFIG_FILE})", e)
 
     def save(self) -> None:
         try:
             with CONFIG_FILE.open("w") as f:
                 json.dump(self._data, f, indent=2)
-        except OSError:
-            pass
+        except OSError as e:
+            _debug_log(f"config save failed ({CONFIG_FILE})", e)
 
     # ------------------------------------------------------------------
     # Access

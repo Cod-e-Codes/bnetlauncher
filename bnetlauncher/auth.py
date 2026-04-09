@@ -335,10 +335,16 @@ class BNetAuth:
     # Token helpers
     # ------------------------------------------------------------------
 
+    def has_stored_token(self) -> bool:
+        """True if OAuth access_token is saved (may be expired). Used for header / hub UI."""
+        return bool((self.cfg.get("access_token") or "").strip())
+
     def is_authenticated(self) -> bool:
-        token = self.cfg.get("access_token")
-        expiry = self.cfg.get("token_expiry", 0)
-        return bool(token) and time.time() < expiry - 60
+        """True if access_token exists and is not expired (use for API calls)."""
+        if not self.has_stored_token():
+            return False
+        expiry = int(self.cfg.get("token_expiry", 0) or 0)
+        return time.time() < expiry - 60
 
     def get_access_token(self) -> Optional[str]:
         if self.is_authenticated():
