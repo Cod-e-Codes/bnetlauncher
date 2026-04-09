@@ -183,6 +183,9 @@ class WineRunner:
         if self.cfg.get("use_proton"):
             return self._resolve_proton()
 
+        return self._resolve_system_wine()
+
+    def _resolve_system_wine(self) -> str:
         configured = self.cfg.get("wine_executable", "wine")
         if configured and os.path.isfile(configured) and os.access(configured, os.X_OK):
             return configured
@@ -217,8 +220,9 @@ class WineRunner:
                     if candidate.exists():
                         return str(candidate)
 
-        # Fallback to system wine
-        return self._resolve_wine()
+        # Fallback to system wine (not _resolve_wine — that would recurse when
+        # use_proton is true)
+        return self._resolve_system_wine()
 
     # ------------------------------------------------------------------
     # Command construction

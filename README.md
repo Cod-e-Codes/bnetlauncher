@@ -66,7 +66,8 @@ Flat tree at repo root:
 ├── scripts/
 │   └── check_imports.py   # optional smoke test (imports + GTK)
 ├── tests/
-│   └── test_wow_addons.py # `python -m unittest discover -s tests -t .`
+│   ├── test_wow_addons.py
+│   └── test_wine_runner.py  # `python -m unittest discover -s tests -t .`
 └── bnetlauncher/          # Python package (see Architecture)
 ```
 
