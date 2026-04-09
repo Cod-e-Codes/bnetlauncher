@@ -52,7 +52,7 @@ If an icon still appears missing, install your distro's full Adwaita icon pack
 - Further **WoW** quality-of-life (optional): shortcuts to per-flavor `WTF` config
   folders, or documented workflows with external add-on managers.
 
-## Project layout
+## Repository layout
 
 ```
 .
