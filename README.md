@@ -39,7 +39,8 @@ Games library on Linux (Ubuntu, Wine, Wayland):
 - **Optional Blizzard API:** OAuth and developer credentials for metadata;
   works offline without them.
 - **Hub pages:** Home, Friends, Shop, News (links open in browser, WSL-aware).
-- **Settings:** Stored in `~/.config/bnetlauncher/config.json`.
+- **Settings:** Stored under **`$XDG_CONFIG_HOME/bnetlauncher/config.json`**
+  (default **`~/.config/bnetlauncher/config.json`** if `XDG_CONFIG_HOME` is unset).
 
 **Sidebar icons:** Shop and News use **`web-browser-symbolic`** and
 **`help-contents-symbolic`** so they resolve on common Adwaita/icon-theme sets.
@@ -51,9 +52,7 @@ If an icon still appears missing, install your distro's full Adwaita icon pack
 - Further **WoW** quality-of-life (optional): shortcuts to per-flavor `WTF` config
   folders, or documented workflows with external add-on managers.
 
-## Repository layout
-
-Flat tree at repo root:
+## Project layout
 
 ```
 .
@@ -62,13 +61,29 @@ Flat tree at repo root:
 ├── LICENSE
 ├── install.sh
 ├── docs/
-│   └── screenshot.png     # README screenshot (replace when UI changes)
+│   └── screenshot.png
 ├── scripts/
-│   └── check_imports.py   # optional smoke test (imports + GTK)
+│   └── check_imports.py          # optional: imports + GTK smoke test
 ├── tests/
 │   ├── test_wow_addons.py
-│   └── test_wine_runner.py  # `python -m unittest discover -s tests -t .`
-└── bnetlauncher/          # Python package (see Architecture)
+│   └── test_wine_runner.py       # python -m unittest discover -s tests -t .
+└── bnetlauncher/
+    ├── main.py                   # entry point; Wayland env before GTK
+    ├── app.py                    # Adw.Application; CSS; actions
+    ├── gtk_compat.py             # CSS / API shims (older GTK)
+    ├── window.py                 # main window; games grid + detail tools
+    ├── auth.py                   # OAuth2; browser open (WSL-aware)
+    ├── config.py                 # JSON config (XDG paths)
+    ├── game_manager.py           # catalogue, scan, SQLite, get_library_games()
+    ├── install_health.py         # verify install paths; repair guidance
+    ├── wow_addons.py             # WoW Interface/AddOns; xdg-open
+    ├── wine_runner.py            # Wine/Proton launch; prefix resolution
+    └── ui/
+        ├── game_card.py
+        ├── hub_pages.py
+        ├── sidebar.py
+        ├── settings.py
+        └── style.css
 ```
 
 ## Requirements
@@ -80,7 +95,7 @@ Flat tree at repo root:
 | `gir1.2-gtk-4.0` | GTK4 typelib |
 | `gir1.2-adw-1` | libadwaita typelib |
 | `wine` / `wine64` | Windows game compatibility |
-| `winbind` | Provides `ntlm_auth` on PATH (Battle.net / Wine installer often needs it) |
+| `winbind` / **Samba clients** | `ntlm_auth` on PATH: Debian/Ubuntu **`winbind`**, Fedora **`samba-winbind-clients`**, Arch **`samba`** (Battle.net / Wine installer often needs this) |
 | `xwayland` | XWayland for Wine (most compositors bundle this) |
 
 Optional: `winetricks`, `dxvk`, Proton (from Steam)
@@ -95,25 +110,31 @@ cd bnetlauncher
 bash install.sh
 ```
 
-`install.sh` detects your distro (Ubuntu/Debian/Fedora/Arch/openSUSE) and
-installs system packages (including **Wine**, **winbind** for `ntlm_auth`, and
+`install.sh` detects your distro (Ubuntu, Debian, Fedora, Arch, openSUSE, and
+common derivatives such as Mint or Pop!_OS) and installs system packages
+(including **Wine**, **`ntlm_auth`** via winbind/Samba where needed, and
 **python3-pip** on Debian-based distros). It upgrades **pip / setuptools /
 wheel** before an editable install (PEP 660), appends **`~/.local/bin`** to
 `~/.bashrc` when needed, and ensures **Wine** is present even if GTK packages
 were already installed.
 
-**Manual install:**
+**Manual install** (match your distro’s packages to `install.sh` where possible):
 
 ```bash
 # Ubuntu / Debian
-sudo apt install python3-pip python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 \
-  wine wine64 winbind xwayland winetricks
+sudo apt install python3-pip python3-gi python3-gi-cairo \
+  gir1.2-gtk-4.0 gir1.2-adw-1 wine wine64 winbind xwayland winetricks
 
-# Arch / Manjaro
-sudo pacman -S python-gobject gtk4 libadwaita wine xorg-xwayland
+# Arch / Manjaro (samba provides ntlm_auth)
+sudo pacman -S python-gobject gtk4 libadwaita wine winetricks samba xorg-xwayland
 
 # Fedora
-sudo dnf install python3-gobject gtk4 libadwaita wine xorg-x11-server-Xwayland
+sudo dnf install python3-gobject gtk4 libadwaita wine winetricks \
+  samba-winbind-clients xorg-x11-server-Xwayland
+
+# openSUSE
+sudo zypper install python3 python3-gobject typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 \
+  wine samba-winbind xwayland
 
 pip install --user -e .
 ```
@@ -131,7 +152,8 @@ This application is **Linux-only** (GTK4/Wayland). On Windows you can still:
 
    ```bash
    sudo apt update
-   sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 python3-pip
+   sudo apt install -y python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 \
+     python3-pip wine wine64 winbind xwayland
    cd /mnt/c/Users/YOU/Projects/bnetlauncher   # adjust path
    python3 -m pip install --user --upgrade pip setuptools wheel
    pip3 install --user -e .
@@ -219,28 +241,6 @@ launcher runs it with the **same `WINEPREFIX` as the Blizzard desktop app**
 Requires **`xdg-open`** on your PATH (standard on desktop Linux). The launcher
 does not install CurseForge/Wago clients or download add-on archives.
 
-## Architecture
-
-```
-bnetlauncher/
-├── main.py           Entry point; Wayland env before GTK
-├── app.py            Adw.Application; CSS; actions
-├── gtk_compat.py     CSS / API shims (older GTK)
-├── window.py         Main window; games grid + detail tools
-├── auth.py           OAuth2; open_default_browser (WSL-aware)
-├── config.py         JSON config (XDG paths)
-├── game_manager.py   Catalogue, scan, SQLite, get_library_games()
-├── install_health.py Verify install paths; repair guidance text
-├── wow_addons.py     WoW `Interface/AddOns` paths; open folder (xdg-open)
-├── wine_runner.py    Wine/Proton launch; prefix resolution for external installs
-└── ui/
-    ├── game_card.py
-    ├── hub_pages.py
-    ├── sidebar.py
-    ├── settings.py
-    └── style.css
-```
-
 ## Source archive
 
 From a clean checkout (excludes `__pycache__` and `*.egg-info`):
@@ -266,13 +266,14 @@ video RAM.
 
 ## Configuration file
 
-`~/.config/bnetlauncher/config.json` (example keys):
+**`$XDG_CONFIG_HOME/bnetlauncher/config.json`** (same as **`~/.config/...`** by default).
+Example keys (defaults use **`wine`** for `wine_executable`; set **`wine64`** if that is your preferred binary):
 
 ```json
 {
   "bnet_client_id": "...",
   "bnet_client_secret": "...",
-  "wine_executable": "wine64",
+  "wine_executable": "wine",
   "wine_prefix_dir": "/home/you/.local/share/bnetlauncher/prefixes",
   "show_unsupported_games": false,
   "dxvk_enabled": true,
