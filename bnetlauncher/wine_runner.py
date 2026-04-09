@@ -22,6 +22,8 @@ Mitigations applied here:
   7. Virtual desktop mode (optional): runs inside a Wine virtual desktop
      window.  Completely eliminates resize-induced crashes at the cost of
      desktop integration.
+  8. No default MESA_GL_* version overrides; Mesa’s reported GL version is left
+     alone unless the user sets those env vars (see README).
 """
 import os
 import shutil
@@ -309,9 +311,8 @@ class WineRunner:
             env["WINE_FULLSCREEN_FSR"] = "1"
             env["WINE_FULLSCREEN_FSR_STRENGTH"] = "2"
 
-        # ── Mesa / Vulkan ──────────────────────────────────────────────
-        env.setdefault("MESA_GL_VERSION_OVERRIDE", "4.6")
-        env.setdefault("MESA_GLSL_VERSION_OVERRIDE", "460")
+        # ── Mesa: no MESA_GL_VERSION_OVERRIDE / MESA_GLSL_VERSION_OVERRIDE ─
+        # (set in the environment if a game needs them)
 
         # ── Vulkan ICD: prefer discrete GPU ───────────────────────────
         # Don't override if the user already set it

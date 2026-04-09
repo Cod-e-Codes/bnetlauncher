@@ -255,6 +255,12 @@ See `wine_runner.py` for `WINE_FULLSCREEN_FAKE_FULLSCREEN`, DXVK, esync/fsync,
 SDL on X11, etc. **Virtual Desktop** in Settings trades integration for maximum
 stability.
 
+The launcher does not set Mesa’s `MESA_GL_VERSION_OVERRIDE` or
+`MESA_GLSL_VERSION_OVERRIDE`; export them yourself if a specific game needs them.
+If Wine crashes or performs badly inside a **VM**, try **DXVK** off and
+**Virtual desktop** on under **Settings → Wine**, and give the guest enough
+video RAM.
+
 ## Configuration file
 
 `~/.config/bnetlauncher/config.json` (example keys):
