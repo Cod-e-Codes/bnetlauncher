@@ -12,6 +12,7 @@ Wayland resize note: we connect to the GdkSurface 'notify::width' and
 size changes gracefully without freezing or crashing.
 """
 import sys
+from pathlib import Path
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -21,7 +22,7 @@ from gi.repository import Adw, GLib, Gtk
 from bnetlauncher.auth import BNetAuth, open_default_browser, print_browser_open_hints
 from bnetlauncher.config import get_config
 from bnetlauncher.game_manager import Game, GameManager
-from bnetlauncher import install_health
+from bnetlauncher import install_health, wow_addons
 from bnetlauncher.ui.game_card import GameCard
 from bnetlauncher.ui import hub_pages
 from bnetlauncher.ui.sidebar import Sidebar
@@ -39,6 +40,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.wine_runner = WineRunner()
 
         self._cards: dict[str, GameCard] = {}
+        self._wow_addon_paths: list[Path] = []
         self._selected_game: Game | None = None
         self._hub_home_labels: dict[str, Gtk.Label] = {}
         self._friends_signin_btn: Gtk.Button | None = None
@@ -276,6 +278,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._detail_play_btn.set_sensitive(False)
             self._detail_verify_btn.set_sensitive(False)
             self._detail_repair_btn.set_sensitive(True)
+            self._clear_wow_addons_ui()
             return
 
         for game in games:
@@ -343,6 +346,35 @@ class MainWindow(Adw.ApplicationWindow):
         tools.append(self._detail_repair_btn)
         inner.append(tools)
 
+        self._wow_addons_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._wow_addons_box.set_visible(False)
+        wow_lbl = Gtk.Label(label="WoW add-ons")
+        wow_lbl.set_halign(Gtk.Align.START)
+        wow_lbl.add_css_class("bnet-card-genre")
+        self._wow_addons_box.append(wow_lbl)
+
+        self._wow_listbox = Gtk.ListBox()
+        self._wow_listbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        if hasattr(self._wow_listbox, "set_activate_on_single_click"):
+            self._wow_listbox.set_activate_on_single_click(True)
+        self._wow_listbox.connect("row-activated", self._on_wow_addon_row_activated)
+
+        pop_scroll = Gtk.ScrolledWindow()
+        pop_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        pop_scroll.set_min_content_height(120)
+        pop_scroll.set_max_content_height(280)
+        pop_scroll.set_child(self._wow_listbox)
+
+        self._wow_addons_popover = Gtk.Popover()
+        self._wow_addons_popover.set_child(pop_scroll)
+
+        self._wow_addons_menubtn = Gtk.MenuButton()
+        self._wow_addons_menubtn.set_label("Open Add-ons folder…")
+        self._wow_addons_menubtn.set_popover(self._wow_addons_popover)
+        self._wow_addons_menubtn.set_halign(Gtk.Align.START)
+        self._wow_addons_box.append(self._wow_addons_menubtn)
+        inner.append(self._wow_addons_box)
+
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
         inner.append(spacer)
@@ -373,6 +405,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._detail_status.set_text("Unsupported on Linux/Wine")
             self._detail_play_btn.set_label("UNSUPPORTED")
             self._detail_play_btn.set_sensitive(False)
+            self._clear_wow_addons_ui()
             return
 
         if game.installed:
@@ -389,6 +422,8 @@ class MainWindow(Adw.ApplicationWindow):
             self._detail_status.set_text("Not installed")
             self._detail_play_btn.set_label("INSTALL")
             self._detail_play_btn.set_sensitive(True)
+
+        self._sync_wow_addons_ui(game)
 
     # -- Hub pages (Home / Friends / Shop / News) ─────────────────────
 
@@ -505,6 +540,46 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_repair_tips_clicked(self, _) -> None:
         self._toast(install_health.repair_instructions_text())
+
+    def _clear_wow_addons_ui(self) -> None:
+        self._wow_addons_box.set_visible(False)
+        while child := self._wow_listbox.get_first_child():
+            self._wow_listbox.remove(child)
+        self._wow_addon_paths.clear()
+
+    def _sync_wow_addons_ui(self, game: Game) -> None:
+        self._clear_wow_addons_ui()
+        if game.id != "wow" or not game.installed or not game.linux_supported:
+            return
+        path = (game.install_path or "").strip()
+        if not path:
+            return
+        targets = wow_addons.enumerate_addon_folders(Path(path))
+        if not targets:
+            return
+        self._wow_addon_paths = [p for _, p in targets]
+        for label, _ in targets:
+            row = Gtk.ListBoxRow()
+            lbl = Gtk.Label(label=label, xalign=0)
+            lbl.set_margin_start(12)
+            lbl.set_margin_end(12)
+            lbl.set_margin_top(10)
+            lbl.set_margin_bottom(10)
+            row.set_child(lbl)
+            self._wow_listbox.append(row)
+        self._wow_addons_box.set_visible(True)
+
+    def _on_wow_addon_row_activated(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
+        idx = row.get_index()
+        if idx < 0 or idx >= len(self._wow_addon_paths):
+            return
+        addons = self._wow_addon_paths[idx]
+        ok, err = wow_addons.ensure_and_open_addons(addons)
+        self._wow_addons_popover.popdown()
+        if ok:
+            self._toast(f"Opened add-ons folder ({addons.name}).")
+        else:
+            self._toast(f"Could not open add-ons folder: {err}", is_error=True)
 
     def _launch_game(self, game: Game) -> None:
         if not game.linux_supported:

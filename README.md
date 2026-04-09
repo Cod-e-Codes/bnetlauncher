@@ -26,6 +26,13 @@ Games library on Linux (Ubuntu, Wine, Wayland):
   Show unsupported titles** to list them.
 - **Verify / repair hints:** **Games** detail panel includes **Verify install**
   (executable + prefix sanity) and **Repair tips** (Blizzard app Scan and Repair).
+  For **World of Warcraft**, verify also checks that product folders (`_retail_`,
+  `_classic_`, etc.) look sane for add-on paths.
+- **World of Warcraft add-ons:** With WoW installed, the detail panel offers
+  **Open Add-ons folder…** — pick **Retail**, **Classic**, or other detected
+  flavors. The app creates `Interface/AddOns` if needed and opens it in your
+  file manager (`xdg-open`). Install or update add-ons there (CurseForge,
+  Wago, etc.); the launcher does not download add-ons for you.
 - **Optional Blizzard API:** OAuth and developer credentials for metadata;
   works offline without them.
 - **Hub pages:** Home, Friends, Shop, News (links open in browser, WSL-aware).
@@ -38,9 +45,8 @@ If an icon still appears missing, install your distro's full Adwaita icon pack
 
 ## Roadmap
 
-- **World of Warcraft add-ons:** Not implemented yet. Planned: helper to open or
-  sync `Interface/AddOns` for the Retail or Classic folder inside the detected
-  install (or document safe workflows with external tools).
+- Further **WoW** quality-of-life (optional): shortcuts to per-flavor `WTF` config
+  folders, or documented workflows with external add-on managers.
 
 ## Repository layout
 
@@ -56,6 +62,8 @@ Flat tree at repo root:
 │   └── screenshot.png     # README screenshot (replace when UI changes)
 ├── scripts/
 │   └── check_imports.py   # optional smoke test (imports + GTK)
+├── tests/
+│   └── test_wow_addons.py # `python -m unittest discover -s tests -t .`
 └── bnetlauncher/          # Python package (see Architecture)
 ```
 
@@ -107,8 +115,9 @@ pip install --user -e .
 This application is **Linux-only** (GTK4/Wayland). On Windows you can still:
 
 1. **Sanity-check syntax:** `python -m compileall -q bnetlauncher`
-2. **Install the package:** `pip install -e .` (confirms `pyproject.toml` / packaging)
-3. **Run the real UI under WSL2** (Ubuntu 22.04 or newer recommended):
+2. **Unit tests (no GTK):** `python -m unittest discover -s tests -t . -v`
+3. **Install the package:** `pip install -e .` (confirms `pyproject.toml` / packaging)
+4. **Run the real UI under WSL2** (Ubuntu 22.04 or newer recommended):
 
    ```bash
    sudo apt update
@@ -176,6 +185,21 @@ browser troubleshooting.
 Use **Refresh** or **Settings → Wine / Proton → Custom Game Paths** for extra
 scan directories.
 
+### World of Warcraft add-ons
+
+1. Install WoW via the Blizzard desktop app in Wine so **bnetlauncher** detects
+   `Wow.exe` or `WowClassic.exe` under `World of Warcraft/_retail_` or
+   `World of Warcraft/_classic_` (and other `_…_` product folders Blizzard adds).
+2. Select **World of Warcraft** in **Games**, then **Open Add-ons folder…** and
+   choose the product line (e.g. **Retail** or **Classic**).
+3. The launcher ensures `Interface/AddOns` exists and opens that directory. Drop
+   unpacked add-on folders there (each add-on is a folder with a `.toc` file).
+4. **Verify install** includes a light check that those paths are not broken
+   (for example `Interface` accidentally being a file).
+
+Requires **`xdg-open`** on your PATH (standard on desktop Linux). The launcher
+does not install CurseForge/Wago clients or download add-on archives.
+
 ## Architecture
 
 ```
@@ -188,6 +212,7 @@ bnetlauncher/
 ├── config.py         JSON config (XDG paths)
 ├── game_manager.py   Catalogue, scan, SQLite, get_library_games()
 ├── install_health.py Verify install paths; repair guidance text
+├── wow_addons.py     WoW `Interface/AddOns` paths; open folder (xdg-open)
 ├── wine_runner.py    Wine/Proton launch, per-game WINEPREFIX
 └── ui/
     ├── game_card.py
@@ -205,7 +230,7 @@ From a clean checkout (excludes `__pycache__` and `*.egg-info`):
 tar -czf bnetlauncher.tar.gz \
   --exclude='__pycache__' \
   --exclude='*.egg-info' \
-  pyproject.toml README.md LICENSE install.sh docs bnetlauncher scripts
+  pyproject.toml README.md LICENSE install.sh docs bnetlauncher scripts tests
 ```
 
 ## Wayland / resize safety

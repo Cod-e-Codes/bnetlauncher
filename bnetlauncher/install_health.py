@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from bnetlauncher.game_manager import Game
+from bnetlauncher import wow_addons
 from bnetlauncher.wine_runner import WineRunner
 
 
@@ -37,6 +38,10 @@ def verify_install(game: Game, wine_runner: WineRunner) -> tuple[bool, list[str]
         drive_c = Path(prefix) / "drive_c"
         if not drive_c.is_dir():
             issues.append(f"Prefix looks incomplete (no drive_c): {prefix}")
+
+    if game.id == "wow" and exe.is_file():
+        _ok_wow, wow_issues = wow_addons.verify_wow_addon_layout(exe)
+        issues.extend(wow_issues)
 
     return len(issues) == 0, issues
 
